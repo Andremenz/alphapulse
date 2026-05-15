@@ -2,6 +2,7 @@ import sqlite3
 import asyncio
 from pathlib import Path
 from typing import Optional, List
+from config import settings  # ← ADD THIS LINE
 
 class StateDB:
     def __init__(self, db_path: Path):
