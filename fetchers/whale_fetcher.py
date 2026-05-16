@@ -9,7 +9,7 @@ async def fetch_recent_whale_transfers(threshold_eth: float = 10.0, limit: int =
     w3 = AsyncWeb3(AsyncWeb3.AsyncHTTPProvider(settings.get_rpc_url()))
     latest_block = await w3.eth.block_number
     # Look back ~5 blocks (Base block time ~2s, covers ~10s of history)
-    start_block = max(0, latest_block - 5)
+    start_block = max(0, latest_block - 100)
     
     alerts = []
     for b in range(start_block, latest_block):
