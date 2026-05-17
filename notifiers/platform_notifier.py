@@ -1,9 +1,10 @@
 import httpx
+import asyncio
 from config import settings
 from typing import List, Dict
 
 def format_alert(alert: Dict) -> str:
-    """Converts raw alert dict to HTML text compatible with both platforms."""
+    """Formats alert to safe HTML under 4000 chars."""
     if alert["type"] == "whale_buy":
         return (
             f"🐋 <b>Whale Alert (Base)</b>\n"
@@ -15,7 +16,7 @@ def format_alert(alert: Dict) -> str:
         return (
             f"🗳️ <b>Governance Closed</b>\n"
             f"Space: <code>{alert['space']}</code>\n"
-            f"Title: {alert['title']}\n"
+            f"Title: {alert['title'][:60]}...\n"
             f"Votes: <code>{alert['votes']}</code>\n"
             f"<a href='{alert['link']}'>View Proposal</a>"
         )
@@ -31,30 +32,34 @@ def format_alert(alert: Dict) -> str:
 async def send_notifications(alerts: List[Dict]):
     if not alerts:
         return
-        
-    texts = [format_alert(a) for a in alerts]
-    combined = "\n\n---\n\n".join(texts)
-    
+
     creds = settings.get_notifier_creds()
+    url = f"https://api.telegram.org/bot{creds['bot_token']}/sendMessage"
+    payload_base = {"chat_id": creds["chat_id"], "parse_mode": "HTML"}
+
     async with httpx.AsyncClient(timeout=15) as client:
         if settings.platform == "telegram":
-            url = f"https://api.telegram.org/bot{creds['bot_token']}/sendMessage"
-            payload = {"chat_id": creds["chat_id"], "text": combined, "parse_mode": "HTML"}
-            
-            # DEBUG: Send request and print Telegram's response
-            resp = await client.post(url, json=payload)
-            print(f"[TELEGRAM] Status: {resp.status_code}")
-            print(f"[TELEGRAM] Response: {resp.text}")
-            
-            if resp.status_code != 200:
-                print(f"[TELEGRAM] ❌ ERROR: Telegram rejected the message.")
-            else:
-                print(f"[TELEGRAM] ✅ Message delivered successfully.")
+            # Send max 3 most recent alerts to avoid spam & length limits
+            for i, alert in enumerate(alerts[:3]):
+                text = format_alert(alert)
+                payload = {**payload_base, "text": text}
+
+                try:
+                    resp = await client.post(url, json=payload)
+                    if resp.status_code == 200:
+                        print(f"[TELEGRAM] ✅ Alert {i+1} delivered successfully.")
+                    else:
+                        print(f"[TELEGRAM] ❌ Alert {i+1} failed: {resp.status_code} | {resp.text}")
+                except Exception as e:
+                    print(f"[TELEGRAM] ❌ Network error: {e}")
+
+                # 1-second delay between messages to avoid rate limits
+                await asyncio.sleep(1)
 
         elif settings.platform == "discord":
             await client.post(
                 creds["webhook_url"],
-                json={"content": combined}
+                json={"content": "\n\n".join([format_alert(a) for a in alerts[:3]])}
             )
         else:
             print(f"[DRY RUN] Platform '{settings.platform}' not configured.")
