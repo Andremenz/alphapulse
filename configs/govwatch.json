@@ -1,1 +1,10 @@
-{"type": "governance", "space": "aave.eth", "description": "Aave DAO closed proposals"}
+{
+  "spaces": [
+    "arbitrumfoundation.eth",
+    "optimismgov.eth",
+    "aave.eth",
+    "ens.eth",
+    "base.eth"
+  ],
+  "check_interval_minutes": 10
+}
