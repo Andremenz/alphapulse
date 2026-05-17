@@ -1,10 +1,5 @@
 {
-  "spaces": [
-    "arbitrumfoundation.eth",
-    "optimismgov.eth",
-    "aave.eth",
-    "ens.eth",
-    "base.eth"
-  ],
+  "type": "governance",
+  "space": "arbitrumfoundation.eth",
   "check_interval_minutes": 10
 }
