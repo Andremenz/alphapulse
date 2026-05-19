@@ -82,21 +82,3 @@ def setup_scheduler():
             replace_existing=True,
             max_instances=1
         )
-    
-    # Add vesting watch task (AFTER the for loop)
-    try:
-        vesting_config = settings.load_config("vestingwatch")
-        if vesting_config:
-            scheduler.add_job(
-                run_task, "interval",
-                args=["vestingwatch", vesting_config],
-                minutes=settings.check_interval_minutes,
-                id="vestingwatch",
-                replace_existing=True,
-                max_instances=1
-            )
-            print(f"⏱️ Vesting watch loaded.")
-    except Exception as e:
-        print(f"⚠️ Could not load vesting watch: {e}")
-    
-    print(f"⏱️ Scheduler loaded with {len(configs)} tasks.")
