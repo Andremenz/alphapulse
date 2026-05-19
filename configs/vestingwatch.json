@@ -2,9 +2,9 @@
   "type": "vesting",
   "contracts": [
     {
-      "name": "Test Contract",
-      "address": "0x0000000000000000000000000000000000000001",
-      "chain": "base"
+      "name": "PYTH",
+      "address": "0x9d65ff81a3c488d585bbfb0bfe3c7707c7917f54",
+      "chain": "ethereum"
     }
   ],
   "check_interval_minutes": 10
