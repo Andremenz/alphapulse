@@ -82,3 +82,6 @@ def setup_scheduler():
             replace_existing=True,
             max_instances=1
         )
+    
+    # Final log statement
+    print(f"⏱️ Scheduler loaded with {len(configs)} tasks.")
