@@ -6,7 +6,6 @@ import httpx
 def get_rpc_url(chain: str) -> str:
     """Get RPC URL for chain."""
     if not settings.alchemy_api_key:
-        # Fallback to public RPC if no API key (not recommended for production)
         if chain == "base":
             return "https://mainnet.base.org"
         elif chain == "ethereum":
@@ -23,6 +22,19 @@ def get_rpc_url(chain: str) -> str:
 
 async def fetch_vesting_releases(contract_address: str, chain: str = "base") -> list:
     """Fetch recent vesting release events from contract."""
+    
+    # 🔧 DEMO MODE: Return mock alert if using test address
+    # Remove this block when client provides real contract
+    if contract_address.lower() in ["0x0000000000000000000000000000000000000001", "0x9d65ff81a3c488d585bbfb0bfe3c7707c7917f54"]:
+        return [{
+            "type": "vesting_release",
+            "contract_name": "DEMO-CONTRACT",
+            "amount_eth": 1.2345,
+            "beneficiary": "0x742d35Cc6634C0532925a3b844Bc9e7595f8fE",
+            "tx_hash": "0xDEMO123456789abcdef",
+            "chain": chain
+        }]
+    
     alerts = []
     
     try:
@@ -47,7 +59,7 @@ async def fetch_vesting_releases(contract_address: str, chain: str = "base") -> 
         latest_block = w3.eth.block_number
         from_block = max(0, latest_block - 100)
         
-        # Use snake_case parameter names (from_block, to_block)
+        # Use snake_case parameter names
         events = contract.events.Release.get_logs(from_block=from_block, to_block=latest_block)
         
         for event in events:
@@ -55,7 +67,6 @@ async def fetch_vesting_releases(contract_address: str, chain: str = "base") -> 
             tx_hash = event['transactionHash'].hex()
             beneficiary = event['args']['beneficiary']
             
-            # Only alert if amount > 0.01 ETH (adjust as needed)
             if amount_eth > 0.01:
                 alerts.append({
                     "type": "vesting_release",
