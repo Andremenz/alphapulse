@@ -39,8 +39,8 @@ async def fetch_vesting_releases(contract_address: str, chain: str = "base") -> 
         }]
         
         # Convert to checksum address
-checksum_address = w3.to_checksum_address(contract_address)
-contract = w3.eth.contract(address=checksum_address, abi=abi)
+        checksum_address = w3.to_checksum_address(contract_address)
+        contract = w3.eth.contract(address=checksum_address, abi=abi)
         
         # Get events from last 100 blocks
         latest_block = w3.eth.block_number
