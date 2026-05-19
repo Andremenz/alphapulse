@@ -17,16 +17,35 @@ async def run_task(config_name: str, config: dict):
         print(f"[{config_name}] Last check: {last_ts}, Seen IDs: {len(seen_ids)}")
         
         new_alerts = []
+        
         if config["type"] == "whale":
             print(f"[{config_name}] Fetching whale transfers...")
             alerts = await fetch_recent_whale_transfers(config.get("threshold_eth", 10.0))
             print(f"[{config_name}] Found {len(alerts)} raw alerts")
+            
         elif config["type"] == "governance":
             print(f"[{config_name}] Fetching governance...")
             alerts = await fetch_snapshot_governance(config["space"])
             print(f"[{config_name}] Found {len(alerts)} gov events")
+            
         elif config["type"] == "digest":
             alerts = [{"type": "weekly_digest", "total_events": len(seen_ids), "top_space": config.get("space", "N/A"), "period": "7d"}]
+            
+        elif config["type"] == "vesting":
+            print(f"[{config_name}] Fetching vesting releases...")
+            from fetchers.vesting_fetcher import fetch_vesting_releases
+            
+            all_alerts = []
+            for contract in config.get("contracts", []):
+                alerts = await fetch_vesting_releases(
+                    contract["address"], 
+                    contract.get("chain", "base")
+                )
+                all_alerts.extend(alerts)
+            
+            alerts = all_alerts
+            print(f"[{config_name}] Found {len(alerts)} vesting releases")
+            
         else:
             return
 
@@ -52,6 +71,8 @@ async def run_task(config_name: str, config: dict):
 
 def setup_scheduler():
     configs = settings.load_example_configs()
+    
+    # Load standard tasks from config files
     for name, cfg in configs.items():
         scheduler.add_job(
             run_task, "interval",
@@ -61,4 +82,21 @@ def setup_scheduler():
             replace_existing=True,
             max_instances=1
         )
+    
+    # Add vesting watch task (AFTER the for loop)
+    try:
+        vesting_config = settings.load_config("vestingwatch")
+        if vesting_config:
+            scheduler.add_job(
+                run_task, "interval",
+                args=["vestingwatch", vesting_config],
+                minutes=settings.check_interval_minutes,
+                id="vestingwatch",
+                replace_existing=True,
+                max_instances=1
+            )
+            print(f"⏱️ Vesting watch loaded.")
+    except Exception as e:
+        print(f"⚠️ Could not load vesting watch: {e}")
+    
     print(f"⏱️ Scheduler loaded with {len(configs)} tasks.")
