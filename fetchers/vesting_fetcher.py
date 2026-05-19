@@ -5,6 +5,14 @@ import httpx
 
 def get_rpc_url(chain: str) -> str:
     """Get RPC URL for chain."""
+    if not settings.alchemy_api_key:
+        # Fallback to public RPC if no API key (not recommended for production)
+        if chain == "base":
+            return "https://mainnet.base.org"
+        elif chain == "ethereum":
+            return "https://eth.llamarpc.com"
+        else:
+            return "https://mainnet.base.org"
     if chain == "base":
         return f"https://base-mainnet.g.alchemy.com/v2/{settings.alchemy_api_key}"
     elif chain == "ethereum":
@@ -36,7 +44,8 @@ async def fetch_vesting_releases(contract_address: str, chain: str = "base") -> 
         latest_block = w3.eth.block_number
         from_block = max(0, latest_block - 100)
         
-        events = contract.events.Release.get_logs(fromBlock=from_block, toBlock=latest_block)
+        # ✅ FIX: Use snake_case parameter names (from_block, to_block)
+        events = contract.events.Release.get_logs(from_block=from_block, to_block=latest_block)
         
         for event in events:
             amount_eth = w3.from_wei(event['args']['amount'], 'ether')
