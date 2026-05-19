@@ -27,6 +27,21 @@ def format_alert(alert: Dict) -> str:
             f"Top Activity: <code>{alert.get('top_space', 'N/A')}</code>\n"
             f"Period: {alert.get('period', 'Last 7 Days')}"
         )
+    elif alert["type"] == "vesting_release":
+        chain_explorer = {
+            "base": "basescan.org",
+            "ethereum": "etherscan.io",
+            "arbitrum": "arbiscan.io"
+        }.get(alert.get("chain", "base"), "basescan.org")
+        
+        return (
+            f"🔓 <b>Vesting Release ({alert.get('chain', 'base').title()})</b>\n"
+            f"Contract: <code>{alert['contract_name']}</code>\n"
+            f"Amount: <code>{alert['amount_eth']:.4f} ETH</code>\n"
+            f"To: <code>{alert['beneficiary'][:8]}...{alert['beneficiary'][-4:]}</code>\n"
+            f"TX: https://{chain_explorer}/tx/{alert['tx_hash']}"
+        )
+        
     return "🔔 Unknown event type"
 
 async def send_notifications(alerts: List[Dict]):
