@@ -5,6 +5,8 @@ from config import settings
 from database import state_db
 from fetchers.whale_fetcher import fetch_recent_whale_transfers
 from fetchers.governance_fetcher import fetch_snapshot_governance
+from fetchers.intelligence_fetcher import run_intelligence_scan
+from reporters.pdf_reporter import generate_pdf
 from notifiers.platform_notifier import send_notifications
 
 scheduler = AsyncIOScheduler()
@@ -34,23 +36,30 @@ async def run_task(config_name: str, config: dict):
         elif config["type"] == "vesting":
             print(f"[{config_name}] Fetching vesting releases...")
             from fetchers.vesting_fetcher import fetch_vesting_releases
-            
             all_alerts = []
             for contract in config.get("contracts", []):
-                alerts = await fetch_vesting_releases(
-                    contract["address"], 
-                    contract.get("chain", "base")
-                )
-                all_alerts.extend(alerts)
-            
+                all_alerts.extend(await fetch_vesting_releases(contract["address"], contract.get("chain", "base")))
             alerts = all_alerts
             print(f"[{config_name}] Found {len(alerts)} vesting releases")
+
+        elif config["type"] == "intelligence":
+            print(f"[{config_name}] Running institutional intelligence scan...")
+            from fetchers.vesting_fetcher import fetch_vesting_releases
+            vesting_data = []
+            for contract in config.get("contracts", []):
+                vesting_data.extend(await fetch_vesting_releases(contract["address"], contract.get("chain", "ethereum")))
+            
+            alerts = await run_intelligence_scan(vesting_data, config)
+            if alerts:
+                pdf_path = generate_pdf(alerts, config.get("report_output_dir", "./reports"))
+                print(f"[{config_name}] 📄 Audit report generated: {pdf_path}")
+            print(f"[{config_name}] Found {len(alerts)} intelligence alerts")
             
         else:
             return
 
         for a in alerts:
-            aid = a.get("tx_hash") or a.get("id") or a.get("title")
+            aid = a.get("tx_hash") or a.get("tx") or a.get("id") or a.get("title")
             if aid and aid not in seen_ids:
                 new_alerts.append(a)
                 seen_ids.append(aid)
@@ -62,26 +71,13 @@ async def run_task(config_name: str, config: dict):
             await state_db.update_state(config_name, now_ts, seen_ids)
             print(f"[{config_name}] ✅ Sent {len(new_alerts)} new alerts.")
         else:
-            print(f"[{config_name}] ⏳ No new data.")
+            print(f"[{config_name}]  No new data.")
             
     except Exception as e:
-        print(f"[{config_name}] ❌ ERROR: {str(e)}")
-        import traceback
-        print(traceback.format_exc())
+        print(f"[{config_name}]  ERROR: {str(e)}")
 
 def setup_scheduler():
     configs = settings.load_example_configs()
-    
-    # Load standard tasks from config files
     for name, cfg in configs.items():
-        scheduler.add_job(
-            run_task, "interval",
-            args=[name, cfg],
-            minutes=settings.check_interval_minutes,
-            id=name,
-            replace_existing=True,
-            max_instances=1
-        )
-    
-    # Final log statement
+        scheduler.add_job(run_task, "interval", args=[name, cfg], minutes=settings.check_interval_minutes, id=name, replace_existing=True, max_instances=1)
     print(f"⏱️ Scheduler loaded with {len(configs)} tasks.")
