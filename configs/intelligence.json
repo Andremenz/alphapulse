@@ -1,0 +1,13 @@
+{
+  "type": "intelligence",
+  "check_interval_minutes": 15,
+  "chains": ["ethereum", "base", "arbitrum"],
+  "known_entities": {
+    "0x0d0707963952f2fba59dd06f2b425ace40b492fe": "Gate.io Hot Wallet",
+    "0x28c6c06298d514db089934071355e5743bf21d60": "Binance Hot Wallet",
+    "0x21a31ee1afc51d94c2efccaa2092ad1028285549": "Binance 14",
+    "0xd551234ae421e3bcba99a0da6d736074f22192ff": "Binance Cold Wallet"
+  },
+  "price_threshold_percent": 5.0,
+  "report_output_dir": "./reports"
+}
