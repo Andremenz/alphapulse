@@ -1,0 +1,10 @@
+{
+  "type": "solana_monitor",
+  "check_interval_minutes": 10,
+  "programs": [
+    {
+      "name": "Solana Vesting Demo",
+      "address": "vines1vzrYbzLMRdu58ou5XTby4qAqVRLmqo36NKPTg"
+    }
+  ]
+}
