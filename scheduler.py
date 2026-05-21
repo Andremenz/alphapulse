@@ -54,6 +54,16 @@ async def run_task(config_name: str, config: dict):
                 pdf_path = generate_pdf(alerts, config.get("report_output_dir", "./reports"))
                 print(f"[{config_name}] 📄 Audit report generated: {pdf_path}")
             print(f"[{config_name}] Found {len(alerts)} intelligence alerts")
+
+        elif config["type"] == "solana_monitor":
+            print(f"[{config_name}] Fetching Solana monitoring data...")
+            from fetchers.solana_fetcher import fetch_solana_vesting_transfers
+            
+            all_alerts = []
+            for prog in config.get("programs", []):
+                all_alerts.extend(await fetch_solana_vesting_transfers(prog["address"]))
+            alerts = all_alerts
+            print(f"[{config_name}] Found {len(alerts)} Solana events")
             
         else:
             return
@@ -80,4 +90,16 @@ def setup_scheduler():
     configs = settings.load_example_configs()
     for name, cfg in configs.items():
         scheduler.add_job(run_task, "interval", args=[name, cfg], minutes=settings.check_interval_minutes, id=name, replace_existing=True, max_instances=1)
+    
+    # Load Solana monitor if config exists
+    try:
+        solana_config = settings.load_config("solana_watch")
+        if solana_config:
+            scheduler.add_job(run_task, "interval", args=["solana_watch", solana_config], 
+                             minutes=solana_config.get("check_interval_minutes", 10), 
+                             id="solana_watch", replace_existing=True, max_instances=1)
+            print("⏱️ Solana monitor loaded.")
+    except Exception as e:
+        print(f"⚠️ Could not load Solana monitor: {e}")
+    
     print(f"⏱️ Scheduler loaded with {len(configs)} tasks.")
