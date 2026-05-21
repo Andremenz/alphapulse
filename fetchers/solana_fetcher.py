@@ -3,7 +3,8 @@ from config import settings
 from typing import List, Dict
 
 def get_solana_rpc() -> str:
-    return f"https://mainnet.helius-rpc.com/?api-key={settings.helius_api_key}"
+    # Free public RPC - no API key needed
+    return "https://api.mainnet-beta.solana.com"
 
 async def fetch_solana_vesting_transfers(program_address: str, limit: int = 20) -> List[Dict]:
     alerts = []
