@@ -4,6 +4,7 @@ from typing import List, Dict
 from config import settings
 from fetchers.ai_brain import analyze_alpha_event
 from fetchers.shadow_ledger import log_snipe_signal
+from fetchers.trading_engine import execute_snipe
 
 GOV_QUERY = """
 query GetProposals($space: String!, $first: Int!, $skip: Int!) {
@@ -26,7 +27,7 @@ query GetProposals($space: String!, $first: Int!, $skip: Int!) {
 """
 
 async def fetch_snapshot_governance(space: str, first: int=5) -> List[Dict]:
-    """Queries Snapshot GraphQL for active proposals and runs them through the AI Brain."""
+    """Queries Snapshot, runs AI Brain, logs to Ledger, and Executes Snipe."""
     async with httpx.AsyncClient() as client:
         resp = await client.post(
             "https://hub.snapshot.org/graphql",
@@ -39,10 +40,8 @@ async def fetch_snapshot_governance(space: str, first: int=5) -> List[Dict]:
     results = []
     
     for p in proposals:
-        # Run AI Brain on the title and body
         ai_analysis = await analyze_alpha_event(p["title"], p.get("body", "No description provided."))
         
-        # 🚨 NEW: Log SNIPE signals to the Shadow Ledger
         if ai_analysis.get("action") == "SNIPE":
             proposal_data = {
                 "id": p["id"],
@@ -51,7 +50,11 @@ async def fetch_snapshot_governance(space: str, first: int=5) -> List[Dict]:
                 "ai_score": ai_analysis.get("narrative_score", 0),
                 "ai_reasoning": ai_analysis.get("reasoning", "N/A")
             }
+            # 1. Log to Shadow Ledger
             await log_snipe_signal(proposal_data)
+            
+            # 2. 🚨 EXECUTE THE TRADE 🚨
+            await execute_snipe(space, p["title"])
 
         results.append({
             "id": p["id"],
