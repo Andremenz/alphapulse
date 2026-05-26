@@ -30,6 +30,12 @@ async def run_task(config_name: str, config: dict):
             print(f"[{config_name}] Fetching governance...")
             alerts = await fetch_snapshot_governance(config["space"])
             print(f"[{config_name}] Found {len(alerts)} gov events")
+
+        elif config_name == "githubwatch":
+            print(f"[{config_name}] Fetching GitHub commits...")
+            from fetchers.github_fetcher import fetch_github_commits
+            alerts = await fetch_github_commits()
+            print(f"[{config_name}] Found {len(alerts)} GitHub events")
             
         elif config["type"] == "digest":
             alerts = [{"type": "weekly_digest", "total_events": len(seen_ids), "top_space": config.get("space", "N/A"), "period": "7d"}]
@@ -49,7 +55,6 @@ async def run_task(config_name: str, config: dict):
             vesting_data = []
             for contract in config.get("contracts", []):
                 vesting_data.extend(await fetch_vesting_releases(contract["address"], contract.get("chain", "ethereum")))
-            
             alerts = await run_intelligence_scan(vesting_data, config)
             if alerts:
                 pdf_path = generate_pdf(alerts, config.get("report_output_dir", "./reports"))
@@ -59,7 +64,6 @@ async def run_task(config_name: str, config: dict):
         elif config["type"] == "solana_monitor":
             print(f"[{config_name}] Fetching Solana monitoring data...")
             from fetchers.solana_fetcher import fetch_solana_vesting_transfers
-            
             all_alerts = []
             for prog in config.get("programs", []):
                 all_alerts.extend(await fetch_solana_vesting_transfers(prog["address"]))
@@ -70,7 +74,7 @@ async def run_task(config_name: str, config: dict):
             return
 
         for a in alerts:
-            aid = a.get("tx_hash") or a.get("tx") or a.get("id") or a.get("title")
+            aid = a.get("tx_hash") or a.get("tx") or a.get("id") or a.get("title") or a.get("sha")
             if aid and aid not in seen_ids:
                 new_alerts.append(a)
                 seen_ids.append(aid)
@@ -103,15 +107,12 @@ def setup_scheduler():
     except Exception as e:
         print(f"⚠️ Could not load Solana monitor: {e}")
         
-    # 🚨 NEW: Load the Automated Exit Manager 🚨
-    scheduler.add_job(
-        check_and_execute_exits, 
-        "interval", 
-        minutes=5, 
-        id="exit_manager", 
-        replace_existing=True, 
-        max_instances=1
-    )
+    # Load the Automated Exit Manager
+    scheduler.add_job(check_and_execute_exits, "interval", minutes=5, id="exit_manager", replace_existing=True, max_instances=1)
     print("⏱️ Exit Manager loaded (checking positions every 5 mins).")
+
+    # 🚨 NEW: Load the GitHub Code-First Scanner 🚨
+    scheduler.add_job(run_task, "interval", args=["githubwatch", {"type": "github"}], minutes=15, id="githubwatch", replace_existing=True, max_instances=1)
+    print("⏱️ GitHub Code-First Scanner loaded (checking repos every 15 mins).")
     
-    print(f"⏱️ Scheduler loaded with {len(configs) + 1} tasks.")
+    print(f"⏱️ Scheduler loaded with {len(configs) + 2} tasks.")
