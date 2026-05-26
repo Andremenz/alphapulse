@@ -6,6 +6,7 @@ from database import state_db
 from fetchers.whale_fetcher import fetch_recent_whale_transfers
 from fetchers.governance_fetcher import fetch_snapshot_governance
 from fetchers.intelligence_fetcher import run_intelligence_scan
+from fetchers.exit_manager import check_and_execute_exits
 from reporters.pdf_reporter import generate_pdf
 from notifiers.platform_notifier import send_notifications
 
@@ -101,5 +102,16 @@ def setup_scheduler():
             print("⏱️ Solana monitor loaded.")
     except Exception as e:
         print(f"⚠️ Could not load Solana monitor: {e}")
+        
+    # 🚨 NEW: Load the Automated Exit Manager 🚨
+    scheduler.add_job(
+        check_and_execute_exits, 
+        "interval", 
+        minutes=5, 
+        id="exit_manager", 
+        replace_existing=True, 
+        max_instances=1
+    )
+    print("⏱️ Exit Manager loaded (checking positions every 5 mins).")
     
-    print(f"⏱️ Scheduler loaded with {len(configs)} tasks.")
+    print(f"⏱️ Scheduler loaded with {len(configs) + 1} tasks.")
