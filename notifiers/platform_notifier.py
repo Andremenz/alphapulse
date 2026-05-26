@@ -11,8 +11,6 @@ def format_alert(alert: Dict) -> str:
     elif alert["type"] == "governance":
         ai_action = alert.get("ai_action", "IGNORE")
         ai_score = alert.get("ai_score", 0)
-        
-        # 🚨 THE 1% ALPHA FORMAT 🚨
         if ai_action == "SNIPE":
             return (
                 f"🚨 <b>1% ALPHA DETECTED: Information Asymmetry</b>\n"
@@ -27,13 +25,33 @@ def format_alert(alert: Dict) -> str:
                 f"🔗 <a href='{alert['link']}'>Read Raw Proposal</a>"
             )
         else:
-            # Standard format for MONITOR or IGNORE
             return (
                 f"🗳️ <b>Governance {alert['state'].capitalize()}</b>\n"
                 f"Space: <code>{alert['space']}</code>\n"
                 f"Title: {alert['title'][:60]}...\n"
                 f"AI Score: {ai_score}/100 ({ai_action})\n"
                 f"<a href='{alert['link']}'>View Proposal</a>"
+            )
+
+    elif alert["type"] == "github_commit":
+        ai_action = alert.get("ai_action", "IGNORE")
+        ai_score = alert.get("ai_score", 0)
+        if ai_action == "SNIPE":
+            return (
+                f"💻 <b>1% ALPHA DETECTED: Code-First Catalyst</b>\n"
+                f"📂 <b>Repo:</b> {alert['repo']}\n"
+                f"🔨 <b>Commit:</b> <code>{alert['sha']}</code> by {alert['author']}\n"
+                f"📝 <b>Message:</b> <i>{alert['message'][:100]}</i>\n"
+                f"🧠 <b>AI Semantic Analysis:</b>\n"
+                f" - <b>Sentiment Score:</b> {ai_score}/100\n"
+                f" - <b>Reasoning:</b> {alert.get('ai_reasoning', 'N/A')}\n"
+                f"🔗 <a href='{alert['link']}'>View Code Change</a>"
+            )
+        else:
+            return (
+                f"💻 <b>GitHub Commit</b> ({alert['repo']})\n"
+                f"<code>{alert['sha']}</code>: {alert['message'][:60]}...\n"
+                f"AI Score: {ai_score}/100 ({ai_action})"
             )
             
     elif alert["type"] == "weekly_digest":
