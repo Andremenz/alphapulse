@@ -53,6 +53,15 @@ def format_alert(alert: Dict) -> str:
                 f"<code>{alert['sha']}</code>: {alert['message'][:60]}...\n"
                 f"AI Score: {ai_score}/100 ({ai_action})"
             )
+
+    elif alert["type"] == "insider_swap":
+        return (
+            f"🕵️‍♂️ <b>SMART MONEY DETECTED: Insider Accumulation</b>\n"
+            f"👤 <b>Wallet:</b> {alert['name']}\n"
+            f"💰 <b>Action:</b> Swapped <code>{alert['eth_amount']} ETH</code> for {alert['space']}\n"
+            f"🧠 <b>AI Reasoning:</b> Core insider directly buying on DEX router.\n"
+            f"🔗 <a href='{alert['link']}'>Track Transaction</a>"
+        )
             
     elif alert["type"] == "weekly_digest":
         return (f"📊 <b>AlphaPulse Weekly Digest</b>\nTotal Events: <code>{alert.get('total_events', 0)}</code>\n"
