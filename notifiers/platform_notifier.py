@@ -83,6 +83,15 @@ def format_alert(alert: Dict) -> str:
                 f"️ Chain: {alert['chain']} | 💰 Amount: <code>{alert['amount']}</code>\n"
                 f" Flags: {alert['flags']}\n"
                 f"🔗 <a href='{alert['tx']}'>View Transaction</a>")
+
+    elif alert_type == "social_filter_skip":
+        return (
+            f"⏳ <b>TRADE SKIPPED: Late to the Party</b>\n"
+            f"🎯 <b>Asset:</b> {alert.get('space', 'N/A')}\n"
+            f"📊 <b>Social Mentions:</b> {alert.get('mention_count', 0)} in last 60min\n"
+            f"🧠 <b>Reasoning:</b> <i>{alert.get('reasoning', 'Narrative already priced in')}</i>\n"
+            f"💡 <b>Strategy:</b> Wait for next asymmetric opportunity."
+        )
                 
     # Fallback for debugging
     print(f"[TELEGRAM] ⚠️ Unknown alert type: {alert_type}")
