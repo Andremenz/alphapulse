@@ -3,7 +3,6 @@ import asyncio
 import json
 from config import settings
 from typing import List, Dict
-from fetchers.shadow_ledger import log_trade_outcome
 
 # Global variable for Telegram command polling
 LAST_UPDATE_ID = 0
@@ -54,7 +53,7 @@ def format_alert(alert: Dict) -> str:
                 f"AI Score: {ai_score}/100 ({ai_action})")
 
     elif alert_type == "insider_swap":
-        return (f"🕵️‍♂️ <b>SMART MONEY DETECTED: Insider Accumulation</b>\n"
+        return (f"🕵️♂️ <b>SMART MONEY DETECTED: Insider Accumulation</b>\n"
                 f"👤 <b>Wallet:</b> {alert['name']}\n"
                 f"💰 <b>Action:</b> Swapped <code>{alert['eth_amount']} ETH</code> for {alert['space']}\n"
                 f"🧠 <b>AI Reasoning:</b> Core insider directly buying on DEX router.\n"
@@ -73,6 +72,17 @@ def format_alert(alert: Dict) -> str:
                 f"💰 <b>Balance:</b> <code>{alert.get('balance_eth', 'N/A')} ETH</code>\n"
                 f"🎯 <b>Est. Shots Left:</b> {alert.get('shots_left', 'N/A')}\n"
                 f"🔗 <b>Action:</b> Bridge ETH to Base via Orbiter/Symbiosis to burner wallet.")
+
+    # 🚨 NEW: Phase 20 Gas Refuel Alert
+    elif alert_type == "gas_refuel_alert":
+        emoji = "🚨" if alert.get("level") == "CRITICAL" else "⚠️"
+        # Permissionless Bridge Link (Orbiter Finance supports Base)
+        bridge_link = "https://www.orbiter.finance/?source=Ethereum&dest=Base"
+        return (f"{emoji} <b>AUTO-REFUEL ALERT: {alert.get('level')}</b>\n"
+                f"💰 <b>Current Balance:</b> <code>{alert.get('balance', '0')} ETH</code>\n"
+                f"📝 <b>Message:</b> {alert.get('message', 'Refuel needed.')}\n"
+                f"🔗 <b>Refuel Now (Permissionless):</b> <a href='{bridge_link}'>Open Orbiter Bridge</a>\n"
+                f"📌 <b>Target Wallet:</b> <code>{alert.get('wallet', 'N/A')}</code>")
             
     elif alert_type in ["weekly_digest", "digest"]:
         return (f"📊 <b>AlphaPulse Weekly Digest</b>\nTotal Events: <code>{alert.get('total_events', 0)}</code>\n"
@@ -91,13 +101,6 @@ def format_alert(alert: Dict) -> str:
                 f"📊 <b>Social Mentions:</b> {alert.get('mention_count', 0)} in last 60min\n"
                 f"🧠 <b>Reasoning:</b> <i>{alert.get('reasoning', 'Narrative already priced in')}</i>\n"
                 f"💡 <b>Strategy:</b> Wait for next asymmetric opportunity.")
-
-    #  NEW: Phase 19 MEV Rebate Alert
-    elif alert_type == "mev_rebate":
-        return (f"💰 <b>MEV REVENUE DETECTED</b>\n"
-                f"📈 <b>Inflow:</b> <code>+{alert.get('diff_eth', '0')} ETH</code>\n"
-                f"💳 <b>Wallet Balance:</b> <code>{alert.get('current_eth', '0')} ETH</code>\n"
-                f" <b>Source:</b> Flashbots MEV-Share Rebate / Trading Profit")
 
     # Fallback
     print(f"[TELEGRAM] ⚠️ Unknown alert type: {alert_type}")
