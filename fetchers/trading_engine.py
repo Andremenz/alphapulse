@@ -3,6 +3,7 @@ import time
 import json
 import httpx
 from web3 import Web3
+from fetchers.social_filter import check_social_sentiment
 
 # Base Chain Configuration
 BASE_RPC_URL = "https://mainnet.base.org"
@@ -15,9 +16,9 @@ WETH_ADDRESS = Web3.to_checksum_address("0x4200000000000000000000000000000000000
 
 # Mapping Snapshot Spaces to their Base Chain Token Contract Addresses
 BASE_TOKEN_MAP = {
-    "aerodrome": Web3.to_checksum_address("0x940181a94A35A4569E4529A3CDfB74e38FD98631"), # AERO
-    "baseswap": Web3.to_checksum_address("0x78a087d713Be963Bf307B18F2Ff8122EF9A63ae9"), # BSWAP
-    "brett": Web3.to_checksum_address("0x532f27101965dd16442E59d40670FaF5eBB142E4"), # BRETT
+    "aerodrome": {"address": Web3.to_checksum_address("0x940181a94A35A4569E4529A3CDfB74e38FD98631"), "ticker": "AERO"},
+    "baseswap": {"address": Web3.to_checksum_address("0x78a087d713Be963Bf307B18F2Ff8122EF9A63ae9"), "ticker": "BSWAP"},
+    "brett": {"address": Web3.to_checksum_address("0x532f27101965dd16442E59d40670FaF5eBB142E4"), "ticker": "BRETT"},
 }
 
 ROUTER_ABI = json.loads('[{"inputs":[{"internalType":"uint256","name":"amountOutMin","type":"uint256"},{"internalType":"address[]","name":"path","type":"address[]"},{"internalType":"address","name":"to","type":"address"},{"internalType":"uint256","name":"deadline","type":"uint256"}],"name":"swapExactETHForTokens","outputs":[{"internalType":"uint256[]","name":"amounts","type":"uint256[]"}],"stateMutability":"payable","type":"function"}]')
@@ -40,14 +41,12 @@ async def check_pool_safety(token_address: str) -> bool:
                 print("[SAFETY] ❌ ABORT: No liquidity pools found on Base.")
                 return False
             
-            # Find the pool with the highest liquidity
             best_pool = max(pools, key=lambda p: float(p["attributes"].get("reserve_in_usd", 0)))
             liquidity = float(best_pool["attributes"].get("reserve_in_usd", 0))
             volume_24h = float(best_pool["attributes"].get("volume_usd", {}).get("h24", 0))
             
             print(f"[SAFETY] 🔍 {token_address[:8]}... | Liquidity: ${liquidity:,.2f} | 24h Vol: ${volume_24h:,.2f}")
             
-            # Institutional Safety Gates
             if liquidity < 50000:
                 print("[SAFETY] ❌ ABORT: Liquidity too low (<$50k). High slippage risk.")
                 return False
@@ -63,7 +62,7 @@ async def check_pool_safety(token_address: str) -> bool:
             return False
 
 async def execute_snipe(space: str, proposal_title: str):
-    """Executes a market buy on Base chain ONLY if the token passes the Safety Shield."""
+    """Executes a market buy on Base chain ONLY if Safety Shield AND Social Filter pass."""
     private_key = os.environ.get("BASE_PRIVATE_KEY")
     snipe_amount_str = os.environ.get("SNIPE_AMOUNT_ETH", "0.005")
     
@@ -72,11 +71,14 @@ async def execute_snipe(space: str, proposal_title: str):
         return
 
     space_lower = space.lower()
-    target_token_address = BASE_TOKEN_MAP.get(space_lower)
+    token_data = BASE_TOKEN_MAP.get(space_lower)
     
-    if not target_token_address:
+    if not token_data:
         print(f"[TRADE] ⚠️ No Base chain token mapped for '{space}'. Alert sent, but no trade executed.")
         return
+
+    target_token_address = token_data["address"]
+    token_ticker = token_data["ticker"]
 
     # 🚨 OMEGA UPGRADE 1: RUN THE SAFETY SHIELD 🚨
     is_safe = await check_pool_safety(target_token_address)
@@ -84,13 +86,21 @@ async def execute_snipe(space: str, proposal_title: str):
         print(f"[TRADE] 🛑 Trade aborted by Safety Shield for {space.upper()}.")
         return
 
+    # 🚨 OMEGA UPGRADE 2: RUN THE SOCIAL FILTER 🚨
+    social_check = await check_social_sentiment(token_ticker, proposal_title)
+    if social_check["is_late"]:
+        print(f"[TRADE] 🛑 Trade aborted by Social Filter for {space.upper()}. {social_check['reasoning']}")
+        return
+    else:
+        print(f"[TRADE] ✅ Social Filter passed: {social_check['reasoning']}")
+
     try:
         account = W3.eth.account.from_key(private_key)
         wallet_address = account.address
         snipe_amount_wei = W3.to_wei(float(snipe_amount_str), 'ether')
         
         balance = W3.eth.get_balance(wallet_address)
-        if balance < snipe_amount_wei + W3.to_wei(0.001, 'ether'): # Keep 0.001 ETH for gas
+        if balance < snipe_amount_wei + W3.to_wei(0.001, 'ether'):
             print(f"[TRADE] ❌ Insufficient Base ETH. Balance: {W3.from_wei(balance, 'ether')} ETH")
             return
 
