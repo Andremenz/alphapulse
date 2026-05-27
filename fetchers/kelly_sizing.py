@@ -1,11 +1,4 @@
-import os
-from web3 import Web3
-
-# Base Chain Config (mirrors trading_engine.py)
-BASE_RPC_URL = "https://mainnet.base.org"
-W3 = Web3(Web3.HTTPProvider(BASE_RPC_URL))
-
-def calculate_optimal_position_size(ai_score: int, liquidity_usd: float, wallet_balance_wei: int) -> int:
+def calculate_optimal_position_size(ai_score: int, liquidity_usd: float, wallet_balance_wei: int, W3) -> int:
     BASE_SIZE_ETH = 0.003
     MIN_SIZE_ETH = 0.0015
     MAX_PORTFOLIO_PCT = 0.25
@@ -17,10 +10,8 @@ def calculate_optimal_position_size(ai_score: int, liquidity_usd: float, wallet_
     if available_eth < MIN_SIZE_ETH:
         return 0
     
-    # Confidence Multiplier (0.6x to 1.3x)
     conf_mult = max(0.6, min(1.3, (ai_score - 75) / 25))
     
-    # Liquidity Multiplier (0.5x to 1.5x)
     if liquidity_usd >= 3_000_000: liq_mult = 1.5
     elif liquidity_usd >= 1_000_000: liq_mult = 1.2
     elif liquidity_usd >= 250_000: liq_mult = 0.9
