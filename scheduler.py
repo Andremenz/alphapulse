@@ -11,7 +11,7 @@ from fetchers.intelligence_fetcher import run_intelligence_scan
 from fetchers.exit_manager import check_and_execute_exits
 from fetchers.gas_monitor import check_gas_health
 from fetchers.insider_fetcher import check_insider_wallets
-from fetchers.rebate_tracker import check_rebates
+from fetchers.refuel_manager import check_gas_and_refuel
 from notifiers.platform_notifier import send_notifications, handle_telegram_commands
 from reporters.pdf_reporter import generate_pdf
 
@@ -73,9 +73,9 @@ async def run_gas_check():
     if new_alerts: await send_notifications(new_alerts)
     else: print("[GAS_MONITOR]  No new data.")
 
-async def run_rebate_check():
-    print("[REBATE_TRACKER] Checking for MEV revenue...")
-    await check_rebates()
+async def run_refuel_check():
+    print("[REFUEL_MANAGER] Checking gas levels...")
+    await check_gas_and_refuel()
 
 def setup_scheduler():
     configs = settings.load_example_configs()
@@ -93,8 +93,8 @@ def setup_scheduler():
     scheduler.add_job(run_gas_check, "interval", minutes=30, id="gas_monitor", replace_existing=True, max_instances=1)
     scheduler.add_job(handle_telegram_commands, "interval", seconds=30, id="telegram_commands", replace_existing=True, max_instances=1)
     
-    #  NEW: Phase 19 Rebate Tracker 
-    scheduler.add_job(run_rebate_check, "interval", minutes=10, id="rebate_tracker", replace_existing=True, max_instances=1)
-    print("⏱️ Rebate Tracker loaded (checking revenue every 10 mins).")
+    # 🚨 NEW: Phase 20 Refuel Manager 🚨
+    scheduler.add_job(run_refuel_check, "interval", minutes=5, id="refuel_manager", replace_existing=True, max_instances=1)
+    print("⏱️ Refuel Manager loaded (checking gas every 5 mins).")
     
-    print(f"⏱️ Scheduler loaded with {len(configs) + 6} tasks.")
+    print(f"⏱️ Scheduler loaded with {len(configs) + 7} tasks.")
