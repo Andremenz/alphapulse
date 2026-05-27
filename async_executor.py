@@ -29,9 +29,14 @@ class AsyncEventEngine:
         )
         self.last_processed_block = 0
         
-        self.tracked_wallets = {
-            "0x1234567890abcdef1234567890abcdef12345678".lower(),
-            "0xabcdef1234567890abcdef1234567890abcdef12".lower()
+               self.tracked_wallets = {
+            # Jesse Pollak (Base Creator/Lead) - Moves funds for ecosystem grants/incentives
+            "0x6d4223342506d27548042B1B86d0389675F972b2".lower(), 
+            
+            # Base L1 Standard Bridge - Triggers when large liquidity moves between L1/L2
+            "0x3154Cf16ccdb4C6d922629664174b904d80F2C35".lower(), 
+            
+            # Add any specific whale/dev wallets you are tracking here
         }
 
     @property
