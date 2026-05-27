@@ -5,7 +5,7 @@ from typing import List, Dict
 
 def format_alert(alert: Dict) -> str:
     alert_type = alert.get("type", "").lower()
-    
+
     if alert_type in ["whale", "whale_buy", "tx"]:
         return (f"🐋 <b>Whale Alert (Base)</b>\nValue: <code>{alert.get('value_eth', 'N/A')} ETH</code>\n"
                 f"To: <code>{alert.get('to', 'N/A')[:8]}...{alert.get('to', 'N/A')[-4:]}</code>\nTX: https://basescan.org/tx/{alert.get('tx_hash', '')}")
@@ -64,6 +64,14 @@ def format_alert(alert: Dict) -> str:
             f"🧠 <b>AI Reasoning:</b> Core insider directly buying on DEX router.\n"
             f"🔗 <a href='{alert['link']}'>Track Transaction</a>"
         )
+
+    elif alert_type in ["vesting_release", "vesting"]:
+        return (
+            f"🔓 <b>Vesting Release</b>\n"
+            f"📜 <b>Contract:</b> {alert.get('contract_name', 'N/A')}\n"
+            f"💰 <b>Amount:</b> <code>{alert.get('amount_eth', 'N/A')} ETH</code>\n"
+            f"👤 <b>Beneficiary:</b> <code>{alert.get('beneficiary', 'N/A')}</code>"
+        )
             
     elif alert_type in ["weekly_digest", "digest"]:
         return (f"📊 <b>AlphaPulse Weekly Digest</b>\nTotal Events: <code>{alert.get('total_events', 0)}</code>\n"
@@ -78,7 +86,7 @@ def format_alert(alert: Dict) -> str:
                 
     # Fallback for debugging
     print(f"[TELEGRAM] ⚠️ Unknown alert type: {alert_type}")
-    return f"🔔 <b>New Event Detected</b>\nType: <code>{alert_type}</code>\nData: {str(alert)[:100]}..."
+    return f"🔔 <b>New Event Detected</b>\nType: <code>{alert_type}</code>\nData: {str(alert)[:150]}..."
 
 async def send_notifications(alerts: List[Dict]):
     if not alerts: return
