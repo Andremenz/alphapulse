@@ -7,7 +7,7 @@ from fetchers.whale_fetcher import fetch_recent_whale_transfers
 from fetchers.governance_fetcher import fetch_snapshot_governance
 from fetchers.intelligence_fetcher import run_intelligence_scan
 from fetchers.exit_manager import check_and_execute_exits
-from fetchers.insider_fetcher import check_insider_wallets
+from fetchers.gas_monitor import check_gas_health
 from reporters.pdf_reporter import generate_pdf
 from notifiers.platform_notifier import send_notifications
 
@@ -95,15 +95,28 @@ async def run_task(config_name: str, config: dict):
 async def run_insider_watch():
     print("[INSIDER_WATCH] Starting check...")
     new_alerts = []
+    from fetchers.insider_fetcher import check_insider_wallets
     async for alert in check_insider_wallets():
         new_alerts.append(alert)
-    
     if new_alerts:
         print(f"[INSIDER_WATCH] 📤 Sending {len(new_alerts)} alerts...")
         await send_notifications(new_alerts)
         print(f"[INSIDER_WATCH] ✅ Sent {len(new_alerts)} new alerts.")
     else:
         print("[INSIDER_WATCH]  No new data.")
+
+async def run_gas_check():
+    print("[GAS_MONITOR] Starting health check...")
+    new_alerts = []
+    from fetchers.gas_monitor import check_gas_health
+    async for alert in check_gas_health():
+        new_alerts.append(alert)
+    if new_alerts:
+        print(f"[GAS_MONITOR] 📤 Sending {len(new_alerts)} alerts...")
+        await send_notifications(new_alerts)
+        print(f"[GAS_MONITOR] ✅ Sent {len(new_alerts)} new alerts.")
+    else:
+        print("[GAS_MONITOR]  No new data.")
 
 def setup_scheduler():
     configs = settings.load_example_configs()
@@ -126,8 +139,11 @@ def setup_scheduler():
     scheduler.add_job(run_task, "interval", args=["githubwatch", {"type": "github"}], minutes=15, id="githubwatch", replace_existing=True, max_instances=1)
     print("⏱️ GitHub Code-First Scanner loaded (checking repos every 15 mins).")
     
-    # 🚨 NEW: Load the Smart Money Insider Tracker 🚨
     scheduler.add_job(run_insider_watch, "interval", minutes=10, id="insider_watch", replace_existing=True, max_instances=1)
     print("⏱️ Insider Tracker loaded (scanning wallets every 10 mins).")
     
-    print(f"⏱️ Scheduler loaded with {len(configs) + 3} tasks.")
+    # 🚨 NEW: Phase 10 Gas Monitor 🚨
+    scheduler.add_job(run_gas_check, "interval", minutes=30, id="gas_monitor", replace_existing=True, max_instances=1)
+    print("⏱️ Gas Monitor loaded (checking balance every 30 mins).")
+    
+    print(f"⏱️ Scheduler loaded with {len(configs) + 4} tasks.")
