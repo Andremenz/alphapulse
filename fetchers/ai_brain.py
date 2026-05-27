@@ -56,8 +56,14 @@ async def _query_groq(system_prompt: str, user_message: str):
             response.raise_for_status()
             ai_response_text = response.json()['choices'][0]['message']['content']
             return json.loads(ai_response_text)
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 400:
+                print(f"[AI] ⚠️ Groq 400 error - likely malformed prompt. Returning safe default.")
+                return {"action": "IGNORE", "reasoning": "Prompt format error", "narrative_score": 0, "fomo_potential": "Low"}
+            print(f"[AI] ❌ Groq HTTP error: {e}")
+            return {"action": "IGNORE", "reasoning": f"API Error: {e}", "narrative_score": 0, "fomo_potential": "Low"}
         except Exception as e:
-            print(f"Error querying Groq AI: {e}")
+            print(f"[AI] ❌ Groq connection error: {e}")
             return {"action": "IGNORE", "reasoning": f"API Error", "narrative_score": 0, "fomo_potential": "Low"}
 
 async def analyze_alpha_event(event_title: str, event_description: str):
@@ -65,5 +71,7 @@ async def analyze_alpha_event(event_title: str, event_description: str):
     return await _query_groq(SYSTEM_PROMPT_GOVERNANCE, user_message)
 
 async def analyze_code_commit(repo_name: str, commit_message: str, patch_diff: str):
-    user_message = f"Repository: {repo_name}\nCommit Message: {commit_message}\nCode Changes: {patch_diff}"
+    # Handle empty patch_diff gracefully
+    diff_text = patch_diff if patch_diff and len(patch_diff.strip()) > 10 else "No code diff available (commit message only)"
+    user_message = f"Repository: {repo_name}\nCommit Message: {commit_message}\nCode Changes: {diff_text}"
     return await _query_groq(SYSTEM_PROMPT_CODE, user_message)
