@@ -4,11 +4,13 @@ from config import settings
 from typing import List, Dict
 
 def format_alert(alert: Dict) -> str:
-    if alert["type"] == "whale_buy":
-        return (f"🐋 <b>Whale Alert (Base)</b>\nValue: <code>{alert['value_eth']:.4f} ETH</code>\n"
-                f"To: <code>{alert['to'][:8]}...{alert['to'][-4:]}</code>\nTX: https://basescan.org/tx/{alert['tx_hash']}")
+    alert_type = alert.get("type", "").lower()
+    
+    if alert_type in ["whale", "whale_buy", "tx"]:
+        return (f"🐋 <b>Whale Alert (Base)</b>\nValue: <code>{alert.get('value_eth', 'N/A')} ETH</code>\n"
+                f"To: <code>{alert.get('to', 'N/A')[:8]}...{alert.get('to', 'N/A')[-4:]}</code>\nTX: https://basescan.org/tx/{alert.get('tx_hash', '')}")
                 
-    elif alert["type"] == "governance":
+    elif alert_type == "governance":
         ai_action = alert.get("ai_action", "IGNORE")
         ai_score = alert.get("ai_score", 0)
         if ai_action == "SNIPE":
@@ -33,7 +35,7 @@ def format_alert(alert: Dict) -> str:
                 f"<a href='{alert['link']}'>View Proposal</a>"
             )
 
-    elif alert["type"] == "github_commit":
+    elif alert_type == "github_commit":
         ai_action = alert.get("ai_action", "IGNORE")
         ai_score = alert.get("ai_score", 0)
         if ai_action == "SNIPE":
@@ -54,7 +56,7 @@ def format_alert(alert: Dict) -> str:
                 f"AI Score: {ai_score}/100 ({ai_action})"
             )
 
-    elif alert["type"] == "insider_swap":
+    elif alert_type == "insider_swap":
         return (
             f"🕵️‍♂️ <b>SMART MONEY DETECTED: Insider Accumulation</b>\n"
             f"👤 <b>Wallet:</b> {alert['name']}\n"
@@ -63,18 +65,20 @@ def format_alert(alert: Dict) -> str:
             f"🔗 <a href='{alert['link']}'>Track Transaction</a>"
         )
             
-    elif alert["type"] == "weekly_digest":
+    elif alert_type in ["weekly_digest", "digest"]:
         return (f"📊 <b>AlphaPulse Weekly Digest</b>\nTotal Events: <code>{alert.get('total_events', 0)}</code>\n"
                 f"Top Activity: <code>{alert.get('top_space', 'N/A')}</code>\nPeriod: {alert.get('period', 'Last 7 Days')}")
                 
-    elif alert["type"] == "intelligence_alert":
+    elif alert_type in ["intelligence_alert", "intelligence"]:
         return (f"{alert.get('title', '🔍 Intelligence Alert')}\n"
                 f" Entity: <code>{alert['entity']}</code>\n"
                 f"️ Chain: {alert['chain']} | 💰 Amount: <code>{alert['amount']}</code>\n"
                 f" Flags: {alert['flags']}\n"
                 f"🔗 <a href='{alert['tx']}'>View Transaction</a>")
                 
-    return "🔔 Unknown event type"
+    # Fallback for debugging
+    print(f"[TELEGRAM] ⚠️ Unknown alert type: {alert_type}")
+    return f"🔔 <b>New Event Detected</b>\nType: <code>{alert_type}</code>\nData: {str(alert)[:100]}..."
 
 async def send_notifications(alerts: List[Dict]):
     if not alerts: return
