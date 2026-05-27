@@ -29,14 +29,10 @@ class AsyncEventEngine:
         )
         self.last_processed_block = 0
         
-               self.tracked_wallets = {
-            # Jesse Pollak (Base Creator/Lead) - Moves funds for ecosystem grants/incentives
-            "0x6d4223342506d27548042B1B86d0389675F972b2".lower(), 
-            
-            # Base L1 Standard Bridge - Triggers when large liquidity moves between L1/L2
-            "0x3154Cf16ccdb4C6d922629664174b904d80F2C35".lower(), 
-            
-            # Add any specific whale/dev wallets you are tracking here
+        # Real Base Ecosystem Wallets for immediate testing
+        self.tracked_wallets = {
+            "0x6d4223342506d27548042B1B86d0389675F972b2".lower(), # Jesse Pollak (Base Lead)
+            "0x3154Cf16ccdb4C6d922629664174b904d80F2C35".lower()  # Base L1 Standard Bridge
         }
 
     @property
@@ -77,8 +73,7 @@ class AsyncEventEngine:
             from_addr = tx.get("from")
             to_addr = tx.get("to")
             
-            # 🚀 FIX: Contract deployments have a null 'to' address.
-            # We safely handle None types before calling .lower()
+            # Safely handle contract deployments (where 'to' is None)
             from_addr = from_addr.lower() if from_addr else None
             to_addr = to_addr.lower() if to_addr else None
             
