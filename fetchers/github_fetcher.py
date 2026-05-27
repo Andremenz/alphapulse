@@ -6,10 +6,11 @@ from fetchers.shadow_ledger import log_snipe_signal
 from fetchers.trading_engine import execute_snipe
 
 # Target Repos (Owner, Repo Name, and the mapped Snapshot Space for trading)
+# Verified active Base ecosystem repositories
 REPOS = [
-    {"owner": "aerodrome-finance", "repo": "contracts", "space": "aerodrome"},
-    {"owner": "BaseSwap", "repo": "baseswap-core", "space": "baseswap"},
-    {"owner": "base-org", "repo": "contracts", "space": "base"}
+    {"owner": "aerodrome-finance", "repo": "aerodrome-dao", "space": "aerodrome"},
+    {"owner": "base-org", "repo": "base", "space": "base"},
+    {"owner": "friendtech", "repo": "friendtech-contracts", "space": "friendtech"},
 ]
 
 async def fetch_github_commits() -> List[Dict]:
