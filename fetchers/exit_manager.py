@@ -50,10 +50,9 @@ async def check_and_execute_exits():
         stop_loss_price = entry_price * 0.90
         current_price = 0
         
-        # 🚀 PHASE 16 UPGRADE: Replaced CoinGecko with GeckoTerminal for instant, Base-accurate pricing
+        # 🚀 PHASE 16 UPGRADE: GeckoTerminal for instant, Base-accurate pricing (geo-permissionless)
         try:
             async with httpx.AsyncClient() as client:
-                # GeckoTerminal is geo-permissionless and updates Base micro-caps instantly
                 url = f"https://api.geckoterminal.com/api/v2/networks/base/tokens/{token_address}"
                 resp = await client.get(url, timeout=5, headers={"Accept": "application/json"})
                 if resp.status_code == 200:
@@ -102,7 +101,7 @@ async def check_and_execute_exits():
                     await propose_prompt_update(proposal_id, space, ai_score, entry_price, current_price)
                     
                     # 🚀 PHASE 17: Trigger Bayesian RL Update (Win/Loss tracking for Kelly sizing)
-                    is_win = current_price >= target_price  # True if TP hit, False if SL hit
+                    is_win = current_price >= target_price
                     log_trade_outcome(proposal_id, is_win)
                     
                 else:
