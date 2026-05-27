@@ -6,7 +6,9 @@ from web3 import Web3
 from fetchers.social_filter import check_social_sentiment
 from fetchers.kelly_sizing import calculate_optimal_position_size
 
-BASE_RPC_URL = "https://mainnet.base.org"
+# 🛡️ Phase 11: MEV Protection via Flashbots Protect RPC
+# Bypasses public mempool to prevent sandwich attacks & front-running
+BASE_RPC_URL = "https://base-mainnet.flashbots.net"
 W3 = Web3(Web3.HTTPProvider(BASE_RPC_URL))
 CHAIN_ID = 8453
 
@@ -87,6 +89,6 @@ async def execute_snipe(space: str, proposal_title: str, ai_score: int):
         })
         signed = W3.eth.account.sign_transaction(txn, private_key)
         tx_hash = W3.eth.send_raw_transaction(signed.rawTransaction)
-        print(f"[TRADE] 🚀 EXECUTED! {space.upper()} | Size: {W3.from_wei(size_wei, 'ether'):.4f} ETH | TX: https://basescan.org/tx/{W3.to_hex(tx_hash)}")
+        print(f"[TRADE] 🛡️ MEV-PROTECTED EXECUTION! {space.upper()} | Size: {W3.from_wei(size_wei, 'ether'):.4f} ETH | TX: https://basescan.org/tx/{W3.to_hex(tx_hash)}")
     except Exception as e:
         print(f"[TRADE] ❌ Execution Error: {e}")
