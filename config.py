@@ -1,46 +1,52 @@
 import os
-import json
-from pathlib import Path
-from pydantic_settings import BaseSettings
-from pydantic import Field, validator
-from typing import Literal, Dict, Any
+from dataclasses import dataclass
+from typing import Dict, List, Optional
 
-class AppConfig(BaseSettings):
-    platform: Literal["telegram", "discord"] = "telegram"
-    telegram_bot_token: str = ""
-    telegram_chat_id: str = ""
-    discord_webhook_url: str = ""
-    alchemy_api_key: str = ""
-    check_interval_minutes: int = Field(5, ge=1)
-    configs_dir: Path = Path("configs")
-    db_path: Path = Path("alphapulse_state.db")
-
-    @validator("alchemy_api_key")
-    def warn_missing_keys(cls, v):
-        if not v:
-            print("[CONFIG] Warning: No ALCHEMY_API_KEY provided. Using public Base RPC fallback.")
-        return v
-
-    def get_rpc_url(self) -> str:
-        return f"https://base-mainnet.g.alchemy.com/v2/{self.alchemy_api_key or 'demo'}" if self.alchemy_api_key else "https://mainnet.base.org"
-
-    def get_notifier_creds(self) -> dict:
+@dataclass
+class AppConfig:
+    """Centralized configuration with decentralized overrides"""
+    
+    # Core settings
+    platform: str = os.environ.get("PLATFORM", "telegram").lower()
+    check_interval_minutes: int = int(os.environ.get("CHECK_INTERVAL_MINUTES", "5"))
+    
+    # Decentralized mode flags
+    decentralized_mode: bool = os.environ.get("DECENTRALIZED_MODE", "false").lower() == "true"
+    ipfs_gateway: str = os.environ.get("IPFS_GATEWAY", "https://ipfs.io")
+    akash_network: str = os.environ.get("AKASH_NETWORK", "mainnet")
+    
+    # API Keys (optional in decentralized mode)
+    groq_api_key: Optional[str] = os.environ.get("GROQ_API_KEY")
+    basescan_api_key: Optional[str] = os.environ.get("BASESCAN_API_KEY")
+    telegram_bot_token: Optional[str] = os.environ.get("TELEGRAM_BOT_TOKEN")
+    telegram_chat_id: Optional[str] = os.environ.get("TELEGRAM_CHAT_ID")
+    
+    # Trading config
+    active_chain: str = os.environ.get("ACTIVE_CHAIN", "base")
+    snipe_amount_eth: Optional[str] = os.environ.get("SNIPE_AMOUNT_ETH")  # Deprecated: use Kelly sizing
+    
+    def get_notifier_creds(self) -> Dict[str, str]:
+        """Returns Telegram/Discord credentials"""
+        if self.platform == "telegram":
+            return {
+                "bot_token": self.telegram_bot_token or "",
+                "chat_id": self.telegram_chat_id or ""
+            }
+        elif self.platform == "discord":
+            return {"webhook_url": os.environ.get("DISCORD_WEBHOOK_URL", "")}
+        return {}
+    
+    def load_example_configs(self) -> Dict[str, Dict]:
+        """Returns example fetcher configs (override in decentralized mode)"""
         return {
-            "bot_token": self.telegram_bot_token,
-            "chat_id": self.telegram_chat_id,
-            "webhook_url": self.discord_webhook_url
+            "whalewatch": {"type": "whale", "threshold_eth": 10.0},
+            "govwatch": {"type": "governance", "space": "aerodrome"},
+            "degendigest": {"type": "digest"},
+            "sundaydigest": {"type": "digest"},
+            "vestingwatch": {"type": "vesting", "contracts": [{"address": "0x...", "chain": "base"}]},
+            "solana_watch": {"type": "solana_monitor", "programs": []},
+            "intelligence": {"type": "intelligence", "contracts": []},
         }
 
-    def load_example_configs(self) -> Dict[str, Any]:
-        configs = {}
-        for f in self.configs_dir.glob("*.json"):
-            with open(f) as fh:
-                configs[f.stem] = json.load(fh)
-        return configs
-
-    class Config:
-        env_file = ".env"
-        env_file_encoding = "utf-8"
-        extra = "ignore"
-
+# Global instance
 settings = AppConfig()
