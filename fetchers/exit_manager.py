@@ -4,7 +4,7 @@ import sqlite3
 import httpx
 import time
 from web3 import Web3
-from fetchers.shadow_ledger import DB_PATH, init_db
+from fetchers.shadow_ledger import DB_PATH, init_db, log_trade_outcome
 from fetchers.chain_config import get_chain
 from fetchers.prompt_optimizer import propose_prompt_update
 from fetchers.aerodrome_router import get_onchain_price_and_min_out, execute_aerodrome_swap, AERODROME_ROUTER_ADDRESS
@@ -93,10 +93,18 @@ async def check_and_execute_exits():
                 swap_hash_hex = execute_aerodrome_swap(private_key, token_address, balance, min_out_wei)
                 if swap_hash_hex:
                     print(f"[EXIT] 🛡️ MEV-PROTECTED EXIT EXECUTED! SOLD {space.upper()} | TX: https://{EXPLORER}/tx/{swap_hash_hex}")
+                    
+                    # Update signal status in database
                     cursor.execute("UPDATE alpha_signals SET status = 'CLOSED' WHERE proposal_id = ?", (proposal_id,))
                     conn.commit()
-                    # Phase 14: Trigger Self-Learning Optimizer
+                    
+                    # Phase 14: Trigger Self-Learning Prompt Optimizer
                     await propose_prompt_update(proposal_id, space, ai_score, entry_price, current_price)
+                    
+                    # 🚀 PHASE 17: Trigger Bayesian RL Update (Win/Loss tracking for Kelly sizing)
+                    is_win = current_price >= target_price  # True if TP hit, False if SL hit
+                    log_trade_outcome(proposal_id, is_win)
+                    
                 else:
                     print(f"[EXIT] ❌ Aerodrome Swap Reverted for {space}. Check logs.")
                     
