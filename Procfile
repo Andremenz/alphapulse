@@ -1,2 +1,1 @@
-bot: python main.py
-web: streamlit run dashboard.py --server.port=$PORT --server.headless=true --server.enableCORS=false --server.enableXsrfProtection=false
+web: python -c "import subprocess, sys; subprocess.Popen(['python', 'main.py']); exec(open('dashboard.py').read())" & streamlit run dashboard.py --server.port=$PORT --server.headless=true --server.enableCORS=false --server.enableXsrfProtection=false
