@@ -1,0 +1,55 @@
+---
+version: "2.0"
+services:
+  alphapulse:
+    image:
+      name: ghcr.io/andremenz/alphapulse:latest
+      credentials:
+        host: ghcr.io
+        username: ${{ secrets.GHCR_USERNAME }}
+        password: ${{ secrets.GHCR_TOKEN }}
+    env:
+      - PORT=8080
+      - ACTIVE_CHAIN=base
+      - RAILWAY_VOLUME_MOUNT_PATH=/data
+      - GROQ_API_KEY=${{ secrets.GROQ_API_KEY }}
+      - BASE_PRIVATE_KEY=${{ secrets.BASE_PRIVATE_KEY }}
+      - BASESCAN_API_KEY=${{ secrets.BASESCAN_API_KEY }}
+      - TELEGRAM_BOT_TOKEN=${{ secrets.TELEGRAM_BOT_TOKEN }}
+      - TELEGRAM_CHAT_ID=${{ secrets.TELEGRAM_CHAT_ID }}
+      - DECENTRALIZED_MODE=true
+      - IPFS_GATEWAY=https://ipfs.io
+    command: bash start.sh
+    expose:
+      - port: 8080
+        as: 80
+        to:
+          - global: true
+    resources:
+      cpu:
+        units: 1.0
+      memory:
+        size: 2Gi
+      storage:
+        size: 5Gi
+profiles:
+  compute:
+    alphapulse:
+      resources:
+        cpu:
+          units: 1.0
+        memory:
+          size: 2Gi
+        storage:
+          size: 5Gi
+  placement:
+    dcloud:
+      pricing:
+        alphapulse:
+          denom: uakt
+          amount: 1000
+deployment:
+  alphapulse:
+    dcloud:
+      profile: alphapulse
+      count: 1
