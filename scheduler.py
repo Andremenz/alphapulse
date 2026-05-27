@@ -11,12 +11,11 @@ from fetchers.intelligence_fetcher import run_intelligence_scan
 from fetchers.exit_manager import check_and_execute_exits
 from fetchers.gas_monitor import check_gas_health
 from fetchers.insider_fetcher import check_insider_wallets
-from notifiers.telegram_commands import handle_telegram_command
+from fetchers.rebate_tracker import check_rebates
+from notifiers.platform_notifier import send_notifications, handle_telegram_commands
 from reporters.pdf_reporter import generate_pdf
-from notifiers.platform_notifier import send_notifications
 
 scheduler = AsyncIOScheduler()
-LAST_UPDATE_ID = 0
 
 async def run_task(config_name: str, config: dict):
     print(f"[{config_name}]  Starting check...")
@@ -74,29 +73,9 @@ async def run_gas_check():
     if new_alerts: await send_notifications(new_alerts)
     else: print("[GAS_MONITOR]  No new data.")
 
-async def check_telegram_commands():
-    """Polls Telegram for new commands every 30 seconds."""
-    global LAST_UPDATE_ID
-    creds = settings.get_notifier_creds()
-    bot_token = creds["bot_token"]
-    url = f"https://api.telegram.org/bot{bot_token}/getUpdates?offset={LAST_UPDATE_ID + 1}&limit=10"
-    
-    async with httpx.AsyncClient(timeout=10) as client:
-        try:
-            resp = await client.get(url)
-            if resp.status_code == 200:
-                updates = resp.json().get("result", [])
-                for upd in updates:
-                    msg = upd.get("message", {})
-                    text = msg.get("text", "").strip()
-                    chat_id = msg.get("chat", {}).get("id")
-                    LAST_UPDATE_ID = upd["update_id"]
-                    
-                    if text.startswith("/") and chat_id:
-                        print(f"[TELEGRAM]  Command received: {text} from chat {chat_id}")
-                        await handle_telegram_command(text, chat_id)
-        except Exception as e:
-            print(f"[TELEGRAM] ❌ Command poll error: {e}")
+async def run_rebate_check():
+    print("[REBATE_TRACKER] Checking for MEV revenue...")
+    await check_rebates()
 
 def setup_scheduler():
     configs = settings.load_example_configs()
@@ -112,9 +91,10 @@ def setup_scheduler():
     scheduler.add_job(run_task, "interval", args=["githubwatch", {"type": "github"}], minutes=15, id="githubwatch", replace_existing=True, max_instances=1)
     scheduler.add_job(run_insider_watch, "interval", minutes=10, id="insider_watch", replace_existing=True, max_instances=1)
     scheduler.add_job(run_gas_check, "interval", minutes=30, id="gas_monitor", replace_existing=True, max_instances=1)
+    scheduler.add_job(handle_telegram_commands, "interval", seconds=30, id="telegram_commands", replace_existing=True, max_instances=1)
     
-    # 🚨 NEW: Phase 18 Telegram Command Listener 🚨
-    scheduler.add_job(check_telegram_commands, "interval", seconds=30, id="telegram_commands", replace_existing=True, max_instances=1)
-    print("⏱️ Telegram Command Listener loaded (polling every 30s).")
+    #  NEW: Phase 19 Rebate Tracker 
+    scheduler.add_job(run_rebate_check, "interval", minutes=10, id="rebate_tracker", replace_existing=True, max_instances=1)
+    print("⏱️ Rebate Tracker loaded (checking revenue every 10 mins).")
     
     print(f"⏱️ Scheduler loaded with {len(configs) + 6} tasks.")
