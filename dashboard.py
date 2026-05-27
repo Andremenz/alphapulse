@@ -84,4 +84,4 @@ st.dataframe(
     hide_index=True
 )
 
-st.caption("Powered by AlphaPulse Shadow Ledger | Data
+st.caption("Powered by AlphaPulse Shadow Ledger | Data syncs from Railway mounted volume")
