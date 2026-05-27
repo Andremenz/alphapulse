@@ -10,6 +10,8 @@ from fetchers.governance_fetcher import fetch_snapshot_governance
 from fetchers.intelligence_fetcher import run_intelligence_scan
 from fetchers.exit_manager import check_and_execute_exits
 from fetchers.gas_monitor import check_gas_health
+from fetchers.insider_fetcher import check_insider_wallets
+from notifiers.telegram_commands import handle_telegram_command
 from reporters.pdf_reporter import generate_pdf
 from notifiers.platform_notifier import send_notifications
 
@@ -61,7 +63,6 @@ async def run_task(config_name: str, config: dict):
 async def run_insider_watch():
     print("[INSIDER_WATCH] Starting check...")
     new_alerts = []
-    from fetchers.insider_fetcher import check_insider_wallets
     async for alert in check_insider_wallets(): new_alerts.append(alert)
     if new_alerts: await send_notifications(new_alerts)
     else: print("[INSIDER_WATCH]  No new data.")
@@ -74,9 +75,12 @@ async def run_gas_check():
     else: print("[GAS_MONITOR]  No new data.")
 
 async def check_telegram_commands():
+    """Polls Telegram for new commands every 30 seconds."""
     global LAST_UPDATE_ID
     creds = settings.get_notifier_creds()
-    url = f"https://api.telegram.org/bot{creds['bot_token']}/getUpdates?offset={LAST_UPDATE_ID + 1}&limit=5"
+    bot_token = creds["bot_token"]
+    url = f"https://api.telegram.org/bot{bot_token}/getUpdates?offset={LAST_UPDATE_ID + 1}&limit=10"
+    
     async with httpx.AsyncClient(timeout=10) as client:
         try:
             resp = await client.get(url)
@@ -84,45 +88,33 @@ async def check_telegram_commands():
                 updates = resp.json().get("result", [])
                 for upd in updates:
                     msg = upd.get("message", {})
-                    text = msg.get("text", "")
+                    text = msg.get("text", "").strip()
+                    chat_id = msg.get("chat", {}).get("id")
                     LAST_UPDATE_ID = upd["update_id"]
-                    if text.startswith("/approve "):
-                        pid = text.split("/approve ")[1].strip()
-                        try:
-                            with open("data/pending_proposals.json", "r") as f: pending = json.load(f)
-                            for p in pending:
-                                if p["id"] == pid:
-                                    p["status"] = "APPROVED"
-                                    with open("data/active_prompts.json", "r") as f: prompts = json.load(f)
-                                    prompts[p["type"]] = p["new_prompt"]
-                                    with open("data/active_prompts.json", "w") as f: json.dump(prompts, f, indent=2)
-                                    with open("data/pending_proposals.json", "w") as f: json.dump(pending, f, indent=2)
-                                    print(f"[PROMPT] ✅ Approved & Applied: {pid}")
-                                    break
-                        except Exception as e: print(f"[PROMPT] ❌ Approval error: {e}")
-                    elif text.startswith("/reject "):
-                        pid = text.split("/reject ")[1].strip()
-                        try:
-                            with open("data/pending_proposals.json", "r") as f: pending = json.load(f)
-                            for p in pending:
-                                if p["id"] == pid: p["status"] = "REJECTED"
-                            with open("data/pending_proposals.json", "w") as f: json.dump(pending, f, indent=2)
-                            print(f"[PROMPT] ❌ Rejected: {pid}")
-                        except: pass
-        except: pass
+                    
+                    if text.startswith("/") and chat_id:
+                        print(f"[TELEGRAM]  Command received: {text} from chat {chat_id}")
+                        await handle_telegram_command(text, chat_id)
+        except Exception as e:
+            print(f"[TELEGRAM] ❌ Command poll error: {e}")
 
 def setup_scheduler():
     configs = settings.load_example_configs()
     for name, cfg in configs.items():
         scheduler.add_job(run_task, "interval", args=[name, cfg], minutes=settings.check_interval_minutes, id=name, replace_existing=True, max_instances=1)
+    
     try:
         solana_config = settings.load_config("solana_watch")
         if solana_config: scheduler.add_job(run_task, "interval", args=["solana_watch", solana_config], minutes=solana_config.get("check_interval_minutes", 10), id="solana_watch", replace_existing=True, max_instances=1)
     except: pass
+    
     scheduler.add_job(check_and_execute_exits, "interval", minutes=5, id="exit_manager", replace_existing=True, max_instances=1)
     scheduler.add_job(run_task, "interval", args=["githubwatch", {"type": "github"}], minutes=15, id="githubwatch", replace_existing=True, max_instances=1)
     scheduler.add_job(run_insider_watch, "interval", minutes=10, id="insider_watch", replace_existing=True, max_instances=1)
     scheduler.add_job(run_gas_check, "interval", minutes=30, id="gas_monitor", replace_existing=True, max_instances=1)
-    scheduler.add_job(check_telegram_commands, "interval", seconds=30, id="prompt_listener", replace_existing=True, max_instances=1)
-    print("⏱️ Prompt Listener loaded (checking for /approve or /reject every 30s).")
-    print(f"⏱️ Scheduler loaded with {len(configs) + 5} tasks.")
+    
+    # 🚨 NEW: Phase 18 Telegram Command Listener 🚨
+    scheduler.add_job(check_telegram_commands, "interval", seconds=30, id="telegram_commands", replace_existing=True, max_instances=1)
+    print("⏱️ Telegram Command Listener loaded (polling every 30s).")
+    
+    print(f"⏱️ Scheduler loaded with {len(configs) + 6} tasks.")
