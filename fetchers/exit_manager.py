@@ -5,21 +5,20 @@ import httpx
 import time
 from web3 import Web3
 from fetchers.shadow_ledger import DB_PATH, init_db
+from fetchers.chain_config import get_chain
 
-# 🛡️ Phase 11: MEV Protection via Flashbots Protect RPC
-BASE_RPC_URL = "https://base-mainnet.flashbots.net"
-W3 = Web3(Web3.HTTPProvider(BASE_RPC_URL))
-ROUTER_ADDRESS = Web3.to_checksum_address("0x4752ba5DBc23f44D87826276BF6Fd6b1C372aD24")
-WETH_ADDRESS = Web3.to_checksum_address("0x4200000000000000000000000000000000000006")
+CFG = get_chain()
+W3 = CFG["w3"]
+CHAIN_ID = CFG["chain_id"]
+EXPLORER = CFG["explorer"]
+
+ROUTER_ADDRESS = CFG["router_address"]
+WETH_ADDRESS = CFG["weth_address"]
 
 ERC20_ABI = json.loads('[{"constant":true,"inputs":[{"name":"_owner","type":"address"}],"name":"balanceOf","outputs":[{"name":"balance","type":"uint256"}],"type":"function"},{"constant":false,"inputs":[{"name":"_spender","type":"address"},{"name":"_value","type":"uint256"}],"name":"approve","outputs":[{"name":"","type":"bool"}],"type":"function"}]')
 ROUTER_ABI = json.loads('[{"inputs":[{"internalType":"uint256","name":"amountIn","type":"uint256"},{"internalType":"uint256","name":"amountOutMin","type":"uint256"},{"internalType":"address[]","name":"path","type":"address[]"},{"internalType":"address","name":"to","type":"address"},{"internalType":"uint256","name":"deadline","type":"uint256"}],"name":"swapExactTokensForETH","outputs":[{"internalType":"uint256[]","name":"amounts","type":"uint256[]"}],"stateMutability":"nonpayable","type":"function"}]')
 
-SPACE_TO_ADDRESS = {
-    "aerodrome": Web3.to_checksum_address("0x940181a94A35A4569E4529A3CDfB74e38FD98631"),
-    "baseswap": Web3.to_checksum_address("0x78a087d713Be963Bf307B18F2Ff8122EF9A63ae9"),
-    "brett": Web3.to_checksum_address("0x532f27101965dd16442E59d40670FaF5eBB142E4"),
-}
+SPACE_TO_ADDRESS = {space: data["address"] for space, data in CFG["tokens"].items()}
 
 async def check_and_execute_exits():
     init_db()
@@ -65,12 +64,12 @@ async def check_and_execute_exits():
             
         if current_price >= target_price or current_price <= stop_loss_price:
             action_type = "TAKE PROFIT" if current_price >= target_price else "STOP LOSS"
-            print(f"[EXIT] 🛡️ {action_type} triggered for {space.upper()}! Current: ${current_price} | Entry: ${entry_price}")
+            print(f"[EXIT] 🛡️ {action_type} on {CFG['gecko_slug'].upper()}! {space.upper()} | Current: ${current_price} | Entry: ${entry_price}")
             
             try:
                 approve_txn = token_contract.functions.approve(ROUTER_ADDRESS, balance).build_transaction({
                     'from': wallet_address, 'gas': 100000, 'gasPrice': W3.eth.gas_price,
-                    'nonce': W3.eth.get_transaction_count(wallet_address), 'chainId': 8453
+                    'nonce': W3.eth.get_transaction_count(wallet_address), 'chainId': CHAIN_ID
                 })
                 signed_approve = W3.eth.account.sign_transaction(approve_txn, private_key)
                 approve_hash = W3.eth.send_raw_transaction(signed_approve.rawTransaction)
@@ -82,11 +81,11 @@ async def check_and_execute_exits():
                     balance, 0, [token_address, WETH_ADDRESS], wallet_address, deadline
                 ).build_transaction({
                     'from': wallet_address, 'gas': 300000, 'gasPrice': W3.eth.gas_price,
-                    'nonce': W3.eth.get_transaction_count(wallet_address), 'chainId': 8453
+                    'nonce': W3.eth.get_transaction_count(wallet_address), 'chainId': CHAIN_ID
                 })
                 signed_swap = W3.eth.account.sign_transaction(swap_txn, private_key)
                 swap_hash = W3.eth.send_raw_transaction(signed_swap.rawTransaction)
-                print(f"[EXIT] 💰 MEV-PROTECTED EXIT! SOLD {space.upper()} back to ETH | TX: https://basescan.org/tx/{W3.to_hex(swap_hash)}")
+                print(f"[EXIT] 💰 MEV-PROTECTED EXIT! SOLD {space.upper()} | TX: https://{EXPLORER}/tx/{W3.to_hex(swap_hash)}")
                 
                 cursor.execute("UPDATE alpha_signals SET status = 'CLOSED' WHERE proposal_id = ?", (proposal_id,))
                 conn.commit()
