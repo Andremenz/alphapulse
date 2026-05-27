@@ -7,6 +7,7 @@ from fetchers.whale_fetcher import fetch_recent_whale_transfers
 from fetchers.governance_fetcher import fetch_snapshot_governance
 from fetchers.intelligence_fetcher import run_intelligence_scan
 from fetchers.exit_manager import check_and_execute_exits
+from fetchers.insider_fetcher import check_insider_wallets
 from reporters.pdf_reporter import generate_pdf
 from notifiers.platform_notifier import send_notifications
 
@@ -47,7 +48,7 @@ async def run_task(config_name: str, config: dict):
             for contract in config.get("contracts", []):
                 all_alerts.extend(await fetch_vesting_releases(contract["address"], contract.get("chain", "base")))
             alerts = all_alerts
-            print(f"[{config_name}] Found {len(alerts)} vesting releases")
+            print(f"[{config_name}] Found {len(all_alerts)} vesting releases")
 
         elif config["type"] == "intelligence":
             print(f"[{config_name}] Running institutional intelligence scan...")
@@ -91,12 +92,24 @@ async def run_task(config_name: str, config: dict):
     except Exception as e:
         print(f"[{config_name}]  ERROR: {str(e)}")
 
+async def run_insider_watch():
+    print("[INSIDER_WATCH] Starting check...")
+    new_alerts = []
+    async for alert in check_insider_wallets():
+        new_alerts.append(alert)
+    
+    if new_alerts:
+        print(f"[INSIDER_WATCH] 📤 Sending {len(new_alerts)} alerts...")
+        await send_notifications(new_alerts)
+        print(f"[INSIDER_WATCH] ✅ Sent {len(new_alerts)} new alerts.")
+    else:
+        print("[INSIDER_WATCH]  No new data.")
+
 def setup_scheduler():
     configs = settings.load_example_configs()
     for name, cfg in configs.items():
         scheduler.add_job(run_task, "interval", args=[name, cfg], minutes=settings.check_interval_minutes, id=name, replace_existing=True, max_instances=1)
     
-    # Load Solana monitor if config exists
     try:
         solana_config = settings.load_config("solana_watch")
         if solana_config:
@@ -107,12 +120,14 @@ def setup_scheduler():
     except Exception as e:
         print(f"⚠️ Could not load Solana monitor: {e}")
         
-    # Load the Automated Exit Manager
     scheduler.add_job(check_and_execute_exits, "interval", minutes=5, id="exit_manager", replace_existing=True, max_instances=1)
     print("⏱️ Exit Manager loaded (checking positions every 5 mins).")
 
-    # 🚨 NEW: Load the GitHub Code-First Scanner 🚨
     scheduler.add_job(run_task, "interval", args=["githubwatch", {"type": "github"}], minutes=15, id="githubwatch", replace_existing=True, max_instances=1)
     print("⏱️ GitHub Code-First Scanner loaded (checking repos every 15 mins).")
     
-    print(f"⏱️ Scheduler loaded with {len(configs) + 2} tasks.")
+    # 🚨 NEW: Load the Smart Money Insider Tracker 🚨
+    scheduler.add_job(run_insider_watch, "interval", minutes=10, id="insider_watch", replace_existing=True, max_instances=1)
+    print("⏱️ Insider Tracker loaded (scanning wallets every 10 mins).")
+    
+    print(f"⏱️ Scheduler loaded with {len(configs) + 3} tasks.")
