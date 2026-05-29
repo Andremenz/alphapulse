@@ -12,5 +12,4 @@ pandas>=2.0.0
 plotly>=5.18.0
 # Phase 21: Decentralized Infrastructure
 ipfshttpclient>=0.8.0a2
-py-akash>=0.1.0
 bittensor>=6.9.0
