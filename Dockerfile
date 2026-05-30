@@ -2,7 +2,7 @@ FROM python:3.13-slim
 
 WORKDIR /app
 
-# Install system build dependencies (required for ckzg and other packages)
+# Install system build dependencies (REQUIRED for ckzg and other packages)
 RUN apt-get update && apt-get install -y \
     build-essential \
     make \
