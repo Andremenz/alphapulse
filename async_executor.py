@@ -1,3 +1,30 @@
+# =============================================================================
+# 🚨 CONTAINER IMPORT FIX: Ensure fetchers/ is in Python path
+# =============================================================================
+import sys
+import os
+from pathlib import Path
+
+# Get the directory containing this script
+current_dir = Path(__file__).resolve().parent
+
+# Add project root to sys.path if not already present
+if str(current_dir) not in sys.path:
+    sys.path.insert(0, str(current_dir))
+
+# Explicitly add fetchers/ and notifiers/ to path
+fetchers_path = current_dir / "fetchers"
+notifiers_path = current_dir / "notifiers"
+
+if fetchers_path.exists() and str(fetchers_path) not in sys.path:
+    sys.path.insert(0, str(fetchers_path))
+if notifiers_path.exists() and str(notifiers_path) not in sys.path:
+    sys.path.insert(0, str(notifiers_path))
+# =============================================================================
+
+# NOW your normal imports can work
+from database import state_db
+from fetchers.chain_config import get_chain
 import asyncio
 import logging
 import os
