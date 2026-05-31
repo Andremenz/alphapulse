@@ -178,3 +178,12 @@ def get_state_db(db_path: str | Path) -> StateDB:
     if _state_db is None:
         _state_db = StateDB(db_path)
     return _state_db
+# =============================================================================
+# 🚨 GLOBAL SINGLETON INSTANCE (for backward compatibility)
+# =============================================================================
+# This allows `from database import state_db` to work in async_executor.py
+
+from config import settings
+
+# Initialize the global state_db instance with the configured path
+state_db = StateDB(settings.db_path)
