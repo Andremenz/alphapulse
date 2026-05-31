@@ -13,6 +13,7 @@ from fetchers.gas_monitor import check_gas_health
 from fetchers.insider_fetcher import check_insider_wallets
 from fetchers.refuel_manager import check_gas_and_refuel
 from fetchers.signal_engine import scan_smart_money
+from fetchers.kelly_sizer import calculate_position_size
 from notifiers.platform_notifier import send_notifications, handle_telegram_commands
 from reporters.pdf_reporter import generate_pdf
 
@@ -77,6 +78,18 @@ async def run_hunt_scan():
     else:
         print("[HUNT_ENGINE]  No new signals this cycle")
 
+async def run_kelly_update():
+    """Updates position sizing model based on latest win-rate (every 5m)"""
+    print("[KELLY] Updating position sizing model...")
+    try:
+        from fetchers.shadow_ledger import ipfs_ledger
+        stats = ipfs_ledger.get_trading_stats()
+        win_rate = stats.get("win_rate", 0.5)
+        total_trades = stats.get("total_trades", 0)
+        print(f"[KELLY] Live stats: Win-rate={win_rate:.1%} | Trades={total_trades}")
+    except Exception as e:
+        print(f"[KELLY] Update error: {e}")
+
 def setup_scheduler():
     configs = settings.load_example_configs()
     for name, cfg in configs.items():
@@ -88,8 +101,12 @@ def setup_scheduler():
     scheduler.add_job(handle_telegram_commands, "interval", seconds=30, id="telegram_commands", replace_existing=True, max_instances=1)
     scheduler.add_job(run_refuel_check, "interval", minutes=5, id="refuel_manager", replace_existing=True, max_instances=1)
     
-    # 🚨 NEW: Phase 21 Hunt Engine 🚨
+    # 🚨 Phase 21: Hunt Engine (30s scan)
     scheduler.add_job(run_hunt_scan, "interval", seconds=30, id="hunt_engine", replace_existing=True, max_instances=1)
     print("⏱️ Hunt Engine loaded (scanning every 30s).")
     
-    print(f"⏱️ Scheduler loaded with {len(configs) + 6} tasks.")
+    # 🚨 Phase 22: Kelly Sizer (5m auto-update)
+    scheduler.add_job(run_kelly_update, "interval", minutes=5, id="kelly_sizer", replace_existing=True, max_instances=1)
+    print("⏱️ Kelly Sizer loaded (updating every 5m).")
+    
+    print(f"⏱️ Scheduler loaded with {len(configs) + 7} tasks.")
