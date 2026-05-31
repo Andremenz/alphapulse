@@ -139,3 +139,4 @@ def setup_scheduler():
         print("⚠️ Kelly Sizer SKIPPED - module import failed")
     
     print(f"⏱️ Scheduler setup complete.")
+print("🔍 DEBUG: Scheduler setup complete - Hunt Engine should fire every 30s")
