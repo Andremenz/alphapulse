@@ -1,8 +1,10 @@
 #!/bin/bash
 echo "🚀 AlphaPulse Dual-Process Engine Initializing..."
 
-# 🚨 FIX: Set default port if $PORT is empty (Hugging Face Spaces / Railway compatibility)
-PORT=${PORT:-7860}
+# 🚨 FIX: Hugging Face Spaces doesn't set $PORT, so default to 7860
+if [ -z "$PORT" ]; then
+    PORT=7860
+fi
 echo "📡 Using port: $PORT"
 
 # 1. Start the Async Event Engine in the background
