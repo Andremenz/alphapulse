@@ -30,12 +30,13 @@ class AppConfig:
         self.min_pool_tvl_eth = float(os.environ.get("MIN_POOL_TVL_ETH", "25.0"))
         self.max_daily_trades = int(os.environ.get("MAX_DAILY_TRADES", "10"))
         
-        # Feature flags
-        self.enable_escrow = os.environ.get("ENABLE_ESCROW", "true").lower() == "true"
-        self.enable_twap = os.environ.get("ENABLE_TWAP", "true").lower() == "true"
-        self.enable_circuit_breaker = os.environ.get("ENABLE_CIRCUIT_BREAKER", "true").lower() == "true"
+        # 🚨 NEW: Feature Flags for Upgrades
         self.enable_order_flow = os.environ.get("ENABLE_ORDER_FLOW", "true").lower() == "true"
-        self.quicknode_ws_enabled = os.environ.get("QUICKNODE_WS_ENABLED", "true").lower() == "true"
+        self.enable_circuit_breaker = os.environ.get("ENABLE_CIRCUIT_BREAKER", "true").lower() == "true"
+        self.enable_escrow = os.environ.get("ENABLE_ESCROW", "true").lower() == "true"
+        self.enable_twap = os.environ.get("ENABLE_TWAP", "false").lower() == "true"
+        self.enable_execution = os.environ.get("ENABLE_EXECUTION", "true").lower() == "true"
+        self.quicknode_ws_enabled = os.environ.get("QUICKNODE_WS_ENABLED", "false").lower() == "true"
         
         # Notification settings
         self.platform = os.environ.get("PLATFORM", "telegram")
