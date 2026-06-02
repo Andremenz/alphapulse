@@ -1,3 +1,16 @@
+# Add this at the very top of async_executor.py
+import sys
+from pathlib import Path
+
+# Ensure fetchers/ is in Python path
+app_dir = Path(__file__).parent.resolve()
+fetchers_path = app_dir / "fetchers"
+if fetchers_path.exists() and str(fetchers_path) not in sys.path:
+    sys.path.insert(0, str(fetchers_path))
+
+# Now imports will work
+from fetchers.order_flow_scanner import OrderFlowImbalance
+from fetchers.circuit_breaker_v2 import CircuitBreakerV2
 #!/usr/bin/env python3
 """
 AlphaPulse Async Executor - Upgraded Version with Order Flow & Circuit Breaker
