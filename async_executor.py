@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-AlphaPulse Async Executor - Monolithic Version (Debug Logging Added)
+AlphaPulse Async Executor - Ultra-Debug Version
 """
 import sys
 import os
@@ -46,7 +46,7 @@ logging.basicConfig(
 logger = logging.getLogger("AsyncExecutor")
 
 # =============================================================================
-# 3. INLINE: ORDER FLOW SCANNER (Debug Logging Added)
+# 3. INLINE: ORDER FLOW SCANNER (Ultra-Debug)
 # =============================================================================
 class OrderFlowImbalance:
     def __init__(self, web3: Web3):
@@ -54,22 +54,30 @@ class OrderFlowImbalance:
         self.imbalance_history = defaultdict(lambda: deque(maxlen=20))
         self.entry_threshold = 2.0
         self.swap_signatures = {
-            '0x7ff36ab5': 'BUY',  # swapExactETHForTokens
-            '0x38ed1739': 'SELL', # swapExactTokensForETH
-            '0xfb3bdb41': 'BUY',   # swapETHForExactTokens
-            '0x18cbafe5': 'SELL'  # swapExactTokensForTokens
+            '0x7ff36ab5': 'BUY',
+            '0x38ed1739': 'SELL',
+            '0xfb3bdb41': 'BUY',
+            '0x18cbafe5': 'SELL'
         }
+        logger.info("✅ OrderFlowImbalance scanner initialized")
     
     async def scan_mempool_imbalance(self) -> List[Dict]:
+        logger.info("🔍 Scanner: Starting scan...")
         try:
+            logger.info("🔍 Scanner: Getting current block...")
             current_block = self.web3.eth.block_number 
+            logger.info(f"🔍 Scanner: Current block = {current_block}")
+            
             token_flows = defaultdict(lambda: {'buys': 0, 'sells': 0, 'total_eth': 0, 'unique_buyers': set()})
             
-            # Scan last 3 blocks
+            logger.info("🔍 Scanner: Scanning last 3 blocks...")
             for i in range(3):
                 block_num = current_block - i
                 try:
+                    logger.info(f"🔍 Scanner: Fetching block {block_num}...")
                     block = self.web3.eth.get_block(block_num, full_transactions=True) 
+                    logger.info(f"🔍 Scanner: Block {block_num} has {len(block.transactions)} transactions")
+                    
                     for tx in block.transactions:
                         decoded = self._decode_swap(tx)
                         if decoded:
@@ -79,15 +87,13 @@ class OrderFlowImbalance:
                             if direction == 'buys':
                                 token_flows[decoded['token']]['unique_buyers'].add(decoded['from_addr'])
                 except Exception as e:
-                    logger.debug(f"Block fetch error {block_num}: {e}")
+                    logger.error(f"🔍 Scanner: Block fetch error {block_num}: {e}")
                     continue
             
-            # DEBUG: Log what we found
             total_swaps = sum(f['buys'] + f['sells'] for f in token_flows.values())
+            logger.info(f"🔍 Scanner: Found {total_swaps} swaps across {len(token_flows)} tokens")
+            
             if total_swaps > 0:
-                logger.info(f"🔍 Scanned 3 blocks | Found {total_swaps} swaps across {len(token_flows)} tokens")
-                
-                # Show top 3 tokens by flow (even if they don't meet threshold)
                 sorted_tokens = sorted(token_flows.items(), key=lambda x: x[1]['total_eth'], reverse=True)[:3]
                 for token, flows in sorted_tokens:
                     ratio = flows['buys'] / max(flows['sells'], 1) if flows['sells'] > 0 else flows['buys'] * 2
@@ -107,7 +113,6 @@ class OrderFlowImbalance:
                 
                 self.imbalance_history[token].append(ratio)
                 
-                # Signal if strong buy pressure (at least 2 buys, 2:1 ratio)
                 if flows['buys'] >= 2 and ratio >= self.entry_threshold:
                     signals.append({
                         'token': token,
@@ -119,9 +124,10 @@ class OrderFlowImbalance:
                         'timestamp': time.time()
                     })
             
+            logger.info(f"🔍 Scanner: Generated {len(signals)} signals")
             return sorted(signals, key=lambda x: x['total_flow_eth'], reverse=True)[:3]
         except Exception as e:
-            logger.error(f"Order flow scan error: {e}")
+            logger.error(f"🔍 Scanner: CRITICAL ERROR: {e}", exc_info=True)
             return []
     
     def _decode_swap(self, tx) -> Dict:
@@ -150,7 +156,8 @@ class OrderFlowImbalance:
                 'eth_value': eth_value,
                 'from_addr': tx.get('from', '').lower()
             }
-        except Exception:
+        except Exception as e:
+            logger.debug(f"Decode error: {e}")
             return None
 
 # =============================================================================
@@ -205,6 +212,7 @@ except Exception as e:
     sys.exit(1)
 
 # Initialize scanners
+logger.info(f"Initializing scanners: OrderFlow={settings.enable_order_flow}, CircuitBreaker={settings.enable_circuit_breaker}")
 order_flow_scanner = OrderFlowImbalance(w3) if settings.enable_order_flow else None
 circuit_breaker = CircuitBreakerV2() if settings.enable_circuit_breaker else None
 
@@ -212,7 +220,7 @@ logger.info("✅ Async Executor initialized (Monolithic Mode)")
 logger.info(f"🔧 Features: OrderFlow={settings.enable_order_flow}, CircuitBreaker={settings.enable_circuit_breaker}")
 
 # =============================================================================
-# 6. MAIN POLLING LOOP
+# 6. MAIN POLLING LOOP (Ultra-Debug)
 # =============================================================================
 async def poll_blockchain():
     print(f"[AsyncExecutor] Starting Async Block Listener...", flush=True)
@@ -228,35 +236,44 @@ async def poll_blockchain():
                     print(f"[AsyncExecutor] Live block {current_block}", flush=True)
                 last_block = current_block
                 
-                # Scan order flow every 5 blocks
-                if settings.enable_order_flow and order_flow_scanner and current_block % 5 == 0:
-                    flow_signals = await order_flow_scanner.scan_mempool_imbalance()
-                    
-                    for signal in flow_signals:
-                        signal_count += 1
+                # ULTRA-DEBUG: Log the condition check
+                should_scan = settings.enable_order_flow and order_flow_scanner and current_block % 5 == 0
+                if current_block % 5 == 0:
+                    logger.info(f"🔍 Block {current_block}: should_scan={should_scan} (enable={settings.enable_order_flow}, scanner={order_flow_scanner is not None}, mod5={current_block % 5 == 0})")
+                
+                if should_scan:
+                    logger.info(f"🔍 Triggering scanner at block {current_block}...")
+                    try:
+                        flow_signals = await order_flow_scanner.scan_mempool_imbalance()
+                        logger.info(f"🔍 Scanner returned {len(flow_signals)} signals")
                         
-                        if circuit_breaker:
-                            safety_check = await circuit_breaker.check_anomaly(signal['token'], w3)
-                            if safety_check['action'] == 'BLOCK_TRADE':
-                                logger.warning(f"🚫 Circuit breaker blocked: {safety_check['reason']}")
-                                continue
-                        
-                        logger.info(
-                            f"📊 SIGNAL #{signal_count} | "
-                            f"Token: {signal['token'][:10]}... | "
-                            f"Ratio: {signal['buy_sell_ratio']:.1f}:1 | "
-                            f"Flow: {signal['total_flow_eth']:.2f} ETH | "
-                            f"Buyers: {signal['unique_buyers']} | "
-                            f"Confidence: {signal['confidence']:.0f}%"
-                        )
-                        await log_signal_to_db(signal)
+                        for signal in flow_signals:
+                            signal_count += 1
+                            
+                            if circuit_breaker:
+                                safety_check = await circuit_breaker.check_anomaly(signal['token'], w3)
+                                if safety_check['action'] == 'BLOCK_TRADE':
+                                    logger.warning(f"🚫 Circuit breaker blocked: {safety_check['reason']}")
+                                    continue
+                            
+                            logger.info(
+                                f"📊 SIGNAL #{signal_count} | "
+                                f"Token: {signal['token'][:10]}... | "
+                                f"Ratio: {signal['buy_sell_ratio']:.1f}:1 | "
+                                f"Flow: {signal['total_flow_eth']:.2f} ETH | "
+                                f"Buyers: {signal['unique_buyers']} | "
+                                f"Confidence: {signal['confidence']:.0f}%"
+                            )
+                            await log_signal_to_db(signal)
+                    except Exception as e:
+                        logger.error(f"🔍 Scanner execution error: {e}", exc_info=True)
                 
                 await asyncio.sleep(2)
             else:
                 await asyncio.sleep(1)
                 
         except Exception as e:
-            logger.error(f"[AsyncExecutor] Polling error: {e}")
+            logger.error(f"[AsyncExecutor] Polling error: {e}", exc_info=True)
             await asyncio.sleep(5)
 
 async def log_signal_to_db(signal: dict):
