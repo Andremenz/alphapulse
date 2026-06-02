@@ -22,8 +22,18 @@ class AppConfig:
         self.groq_api_key = os.environ.get("GROQ_API_KEY", "")
         self.ai_confidence_threshold = int(os.environ.get("AI_CONFIDENCE_THRESHOLD", "45"))
         
-        # Trading settings
-        self.base_private_key = os.environ.get("BASE_PRIVATE_KEY") or os.environ.get("PRIVATE_KEY") or os.environ.get("WALLET_KEY") or ""
+        # Trading settings (BULLETPROOF EXTRACTION)
+        raw_pk = os.environ.get("BASE_PRIVATE_KEY") or os.environ.get("PRIVATE_KEY") or os.environ.get("WALLET_KEY") or ""
+        self.base_private_key = raw_pk.strip() if raw_pk else ""
+        
+        # 🔍 SAFE DEBUG: Prints the names of your secrets (not the values)
+        env_keys = [k for k in os.environ.keys() if 'KEY' in k.upper() or 'PRIVATE' in k.upper() or 'WALLET' in k.upper()]
+        print(f"🔍 DEBUG: Found these potential key variables in Hugging Face: {env_keys}", flush=True)
+        if self.base_private_key:
+            print(f"✅ Private key loaded successfully (length: {len(self.base_private_key)})", flush=True)
+        else:
+            print(f"❌ WARNING: Private key is EMPTY! Check Hugging Face secrets.", flush=True)
+        
         self.take_profit_pct = float(os.environ.get("TAKE_PROFIT_PCT", "0.15"))
         self.stop_loss_pct = float(os.environ.get("STOP_LOSS_PCT", "0.10"))
         self.slippage_pct = float(os.environ.get("SLIPPAGE_PCT", "0.015"))
