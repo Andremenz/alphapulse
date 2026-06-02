@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """
-AlphaPulse Async Executor - Monolithic Version
-All logic contained in a single file to bypass Hugging Face package import issues.
+AlphaPulse Async Executor - Monolithic Version (HTTP Forced & Logs Flushed)
 """
 import sys
 import os
@@ -18,19 +17,19 @@ import numpy as np
 from web3 import Web3
 
 # =============================================================================
-# 1. CONFIGURATION (Inline fallback to guarantee it runs)
+# 1. CONFIGURATION
 # =============================================================================
 try:
     from config import settings
-    print("✅ Loaded config from config.py")
+    print("✅ Loaded config from config.py", flush=True)
 except Exception as e:
-    print(f"⚠️ Could not import config.py: {e}. Using fallback config.")
+    print(f"⚠️ Could not import config.py: {e}. Using fallback config.", flush=True)
     class FallbackConfig:
         def __init__(self):
             self.db_path = os.environ.get("DB_PATH", "/data/alphapulse.db")
             self.base_rpc = os.environ.get("BASE_RPC", "https://mainnet.base.org")
             self.base_ws = os.environ.get("BASE_WS", "")
-            self.quicknode_ws_enabled = os.environ.get("QUICKNODE_WS_ENABLED", "false").lower() == "true"
+            self.quicknode_ws_enabled = False # Force HTTP for stability
             self.enable_order_flow = os.environ.get("ENABLE_ORDER_FLOW", "true").lower() == "true"
             self.enable_circuit_breaker = os.environ.get("ENABLE_CIRCUIT_BREAKER", "true").lower() == "true"
             Path("/data").mkdir(parents=True, exist_ok=True)
@@ -47,31 +46,30 @@ logging.basicConfig(
 logger = logging.getLogger("AsyncExecutor")
 
 # =============================================================================
-# 3. INLINE: ORDER FLOW SCANNER (Upgraded to scan confirmed blocks)
+# 3. INLINE: ORDER FLOW SCANNER
 # =============================================================================
 class OrderFlowImbalance:
-    """Tracks transaction ratio per token by scanning recent blocks."""
     def __init__(self, web3: Web3):
         self.web3 = web3
         self.imbalance_history = defaultdict(lambda: deque(maxlen=20))
-        self.entry_threshold = 2.0  # 2:1 buy:sell ratio
-        # Common DEX swap method signatures
+        self.entry_threshold = 2.0
         self.swap_signatures = {
             '0x7ff36ab5': 'BUY',  # swapExactETHForTokens
             '0x38ed1739': 'SELL', # swapExactTokensForETH
             '0xfb3bdb41': 'BUY',   # swapETHForExactTokens
+            '0x18cbafe5': 'SELL'  # swapExactTokensForTokens (often sells)
         }
     
     async def scan_mempool_imbalance(self) -> List[Dict]:
         try:
-            current_block = await self.web3.eth.block_number
+            current_block = self.web3.eth.block_number 
             token_flows = defaultdict(lambda: {'buys': 0, 'sells': 0, 'total_eth': 0, 'unique_buyers': set()})
             
-            # Scan last 5 confirmed blocks for swap activity
-            for i in range(5):
+            # Scan last 3 blocks to be fast and avoid rate limits
+            for i in range(3):
                 block_num = current_block - i
                 try:
-                    block = await self.web3.eth.get_block(block_num, full_transactions=True)
+                    block = self.web3.eth.get_block(block_num, full_transactions=True) 
                     for tx in block.transactions:
                         decoded = self._decode_swap(tx)
                         if decoded:
@@ -80,7 +78,8 @@ class OrderFlowImbalance:
                             token_flows[decoded['token']]['total_eth'] += decoded['eth_value']
                             if direction == 'buys':
                                 token_flows[decoded['token']]['unique_buyers'].add(decoded['from_addr'])
-                except Exception:
+                except Exception as e:
+                    logger.debug(f"Block fetch error {block_num}: {e}")
                     continue
             
             signals = []
@@ -92,8 +91,8 @@ class OrderFlowImbalance:
                 
                 self.imbalance_history[token].append(ratio)
                 
-                # Signal if strong buy pressure in recent blocks (at least 3 buys, 2:1 ratio)
-                if flows['buys'] >= 3 and ratio >= self.entry_threshold:
+                # Signal if strong buy pressure (at least 2 buys, 2:1 ratio)
+                if flows['buys'] >= 2 and ratio >= self.entry_threshold:
                     signals.append({
                         'token': token,
                         'buy_sell_ratio': ratio,
@@ -114,7 +113,6 @@ class OrderFlowImbalance:
             if not hasattr(tx, 'input') or not tx.input or len(tx.input) < 10:
                 return None
             
-            # Get method ID (first 4 bytes)
             if isinstance(tx.input, bytes):
                 method_id = '0x' + tx.input[:4].hex()
             else:
@@ -134,7 +132,7 @@ class OrderFlowImbalance:
                 'type': 'BUY' if is_buy else 'SELL',
                 'token': token_address.lower(),
                 'eth_value': eth_value,
-                'from_addr': tx['from'].lower() if hasattr(tx, 'from') else ''
+                'from_addr': tx.get('from', '').lower()
             }
         except Exception:
             return None
@@ -144,17 +142,16 @@ class OrderFlowImbalance:
 # =============================================================================
 @dataclass
 class CircuitBreakerV2:
-    """Volume anomaly detection to prevent rug-pull entries"""
     z_score_threshold: float = 3.0
     
     async def check_anomaly(self, token_address: str, web3: Web3) -> Dict:
         try:
-            current_block = await web3.eth.block_number
+            current_block = web3.eth.block_number 
             volumes = []
-            for block_num in range(current_block - 20, current_block):
+            for block_num in range(current_block - 10, current_block):
                 try:
-                    block = await web3.eth.get_block(block_num, full_transactions=False)
-                    volumes.append(len(block.get('transactions', [])))
+                    block = web3.eth.get_block(block_num, full_transactions=False) 
+                    volumes.append(len(block.transactions))
                 except:
                     volumes.append(0)
             
@@ -175,15 +172,14 @@ class CircuitBreakerV2:
             return {"anomaly": False, "action": "ALLOW", "reason": "error_fail_open"}
 
 # =============================================================================
-# 5. WEB3 INITIALIZATION
+# 5. WEB3 INITIALIZATION (FORCED HTTP FOR STABILITY)
 # =============================================================================
 try:
-    if settings.quicknode_ws_enabled and settings.base_ws:
-        logger.info(f"Connecting to WebSocket: {settings.base_ws[:50]}...")
-        w3 = Web3(Web3.WebsocketProvider(settings.base_ws))
-    else:
-        logger.info(f"Connecting to HTTP RPC: {settings.base_rpc[:50]}...")
-        w3 = Web3(Web3.HTTPProvider(settings.base_rpc))
+    # We FORCE HTTP provider. WebSockets in synchronous web3.py v6 often hang on RPC calls.
+    # HTTP is 100% reliable and perfectly fast enough for scanning every 10 seconds.
+    rpc_url = settings.base_rpc
+    logger.info(f"Connecting to HTTP RPC: {rpc_url[:50]}...")
+    w3 = Web3(Web3.HTTPProvider(rpc_url, request_kwargs={'timeout': 10}))
     
     if w3.is_connected():
         logger.info("✅ Web3 connection established")
@@ -205,7 +201,7 @@ logger.info(f"🔧 Features: OrderFlow={settings.enable_order_flow}, CircuitBrea
 # 6. MAIN POLLING LOOP
 # =============================================================================
 async def poll_blockchain():
-    print(f"[AsyncExecutor] Starting Async Block Listener...")
+    print(f"[AsyncExecutor] Starting Async Block Listener...", flush=True)
     last_block = None
     signal_count = 0
     
@@ -215,7 +211,7 @@ async def poll_blockchain():
             
             if current_block != last_block:
                 if current_block % 10 == 0:
-                    print(f"[AsyncExecutor] Live block {current_block}")
+                    print(f"[AsyncExecutor] Live block {current_block}", flush=True)
                 last_block = current_block
                 
                 # Scan order flow every 5 blocks (approx every 10 seconds)
@@ -225,7 +221,6 @@ async def poll_blockchain():
                     for signal in flow_signals:
                         signal_count += 1
                         
-                        # Check circuit breaker before logging signal
                         if circuit_breaker:
                             safety_check = await circuit_breaker.check_anomaly(signal['token'], w3)
                             if safety_check['action'] == 'BLOCK_TRADE':
@@ -251,7 +246,6 @@ async def poll_blockchain():
             await asyncio.sleep(5)
 
 async def log_signal_to_db(signal: dict):
-    """Persist signals to SQLite for the dashboard"""
     try:
         conn = sqlite3.connect(settings.db_path)
         cursor = conn.cursor()
@@ -279,16 +273,16 @@ async def log_signal_to_db(signal: dict):
         logger.error(f"DB log error: {e}")
 
 async def main():
-    print("🚀 AlphaPulse Dual-Process Engine Initializing...")
-    print(f"📡 Using port: {os.environ.get('PORT', 7860)}")
-    print("✅ Async Executor started in background")
+    print("🚀 AlphaPulse Dual-Process Engine Initializing...", flush=True)
+    print(f"📡 Using port: {os.environ.get('PORT', 7860)}", flush=True)
+    print("✅ Async Executor started in background", flush=True)
     await poll_blockchain()
 
 if __name__ == "__main__":
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
-        print("🛑 Shutdown requested")
+        print("🛑 Shutdown requested", flush=True)
     except Exception as e:
-        print(f"❌ Fatal error: {e}")
+        print(f"❌ Fatal error: {e}", flush=True)
         sys.exit(1)
