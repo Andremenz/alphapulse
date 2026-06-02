@@ -9,23 +9,33 @@ class AppConfig:
     """Centralized configuration for AlphaPulse."""
     
     def __init__(self):
-        # 🚨 CRITICAL FIX: Add db_path attribute
+        # Database settings
         self.db_path = os.environ.get("DB_PATH", "/data/alphapulse.db")
         
         # Blockchain settings
         self.active_chain = os.environ.get("ACTIVE_CHAIN", "base")
         self.base_rpc = os.environ.get("BASE_RPC", "https://mainnet.base.org")
+        self.base_ws = os.environ.get("BASE_WS", "")
         self.basescan_api_key = os.environ.get("BASESCAN_API_KEY", "")
         
         # AI settings
         self.groq_api_key = os.environ.get("GROQ_API_KEY", "")
-        self.ai_confidence_threshold = int(os.environ.get("AI_CONFIDENCE_THRESHOLD", "60"))
+        self.ai_confidence_threshold = int(os.environ.get("AI_CONFIDENCE_THRESHOLD", "45"))
         
         # Trading settings
         self.base_private_key = os.environ.get("BASE_PRIVATE_KEY", "")
         self.take_profit_pct = float(os.environ.get("TAKE_PROFIT_PCT", "0.15"))
         self.stop_loss_pct = float(os.environ.get("STOP_LOSS_PCT", "0.10"))
         self.slippage_pct = float(os.environ.get("SLIPPAGE_PCT", "0.015"))
+        self.min_pool_tvl_eth = float(os.environ.get("MIN_POOL_TVL_ETH", "25.0"))
+        self.max_daily_trades = int(os.environ.get("MAX_DAILY_TRADES", "10"))
+        
+        # Feature flags
+        self.enable_escrow = os.environ.get("ENABLE_ESCROW", "true").lower() == "true"
+        self.enable_twap = os.environ.get("ENABLE_TWAP", "true").lower() == "true"
+        self.enable_circuit_breaker = os.environ.get("ENABLE_CIRCUIT_BREAKER", "true").lower() == "true"
+        self.enable_order_flow = os.environ.get("ENABLE_ORDER_FLOW", "true").lower() == "true"
+        self.quicknode_ws_enabled = os.environ.get("QUICKNODE_WS_ENABLED", "true").lower() == "true"
         
         # Notification settings
         self.platform = os.environ.get("PLATFORM", "telegram")
