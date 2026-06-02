@@ -23,7 +23,7 @@ class AppConfig:
         self.ai_confidence_threshold = int(os.environ.get("AI_CONFIDENCE_THRESHOLD", "45"))
         
         # Trading settings
-        self.base_private_key = os.environ.get("BASE_PRIVATE_KEY", "")
+        self.base_private_key = os.environ.get("BASE_PRIVATE_KEY") or os.environ.get("PRIVATE_KEY") or os.environ.get("WALLET_KEY") or ""
         self.take_profit_pct = float(os.environ.get("TAKE_PROFIT_PCT", "0.15"))
         self.stop_loss_pct = float(os.environ.get("STOP_LOSS_PCT", "0.10"))
         self.slippage_pct = float(os.environ.get("SLIPPAGE_PCT", "0.015"))
