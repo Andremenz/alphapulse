@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-AlphaPulse Async Executor - Ultra-Debug Version
+AlphaPulse Async Executor - Diagnostic Version
 """
 import sys
 import os
@@ -10,7 +10,7 @@ import time
 import sqlite3
 from datetime import datetime
 from pathlib import Path
-from collections import defaultdict, deque
+from collections import defaultdict, deque, Counter
 from dataclasses import dataclass, field
 from typing import Dict, List, Deque
 import numpy as np
@@ -46,39 +46,77 @@ logging.basicConfig(
 logger = logging.getLogger("AsyncExecutor")
 
 # =============================================================================
-# 3. INLINE: ORDER FLOW SCANNER (Ultra-Debug)
+# 3. INLINE: ORDER FLOW SCANNER (Diagnostic Mode)
 # =============================================================================
 class OrderFlowImbalance:
     def __init__(self, web3: Web3):
         self.web3 = web3
         self.imbalance_history = defaultdict(lambda: deque(maxlen=20))
         self.entry_threshold = 2.0
-        self.swap_signatures = {
-            '0x7ff36ab5': 'BUY',
-            '0x38ed1739': 'SELL',
-            '0xfb3bdb41': 'BUY',
-            '0x18cbafe5': 'SELL'
+        
+        # Base DEX Router Addresses
+        self.dex_routers = {
+            '0xcf77a3ba9a5ca399b7c97c74d54e5b1beb874e43': 'Aerodrome V2',
+            '0x2626664c2603336e57b271c5c0b26f421741e481': 'Uniswap V3',
+            '0x6bded42c6da8fbf0d2ba55b2fa120c5e0c8d7891': 'SushiSwap',
+            '0x327df1e6de05895d2ab08513aadd9313fe505d86': 'BaseSwap',
+            '0x2626664c2603336e57b271c5c0b26f421741e481': 'Uniswap V3',
         }
-        logger.info("✅ OrderFlowImbalance scanner initialized")
+        
+        # Comprehensive swap signatures for Base
+        self.swap_signatures = {
+            # Uniswap V2 / Aerodrome V2 / BaseSwap
+            '0x7ff36ab5': 'BUY',   # swapExactETHForTokens
+            '0x38ed1739': 'SELL',  # swapExactTokensForETH
+            '0xfb3bdb41': 'BUY',   # swapETHForExactTokens
+            '0x18cbafe5': 'SELL',  # swapExactTokensForTokens
+            '0x4a25d94a': 'SELL',  # swapTokensForExactETH
+            '0x5c11d795': 'BUY',   # swapExactTokensForTokensSupportingFeeOnTransferTokens
+            '0xb6f9de95': 'BUY',  # swapExactETHForTokensSupportingFeeOnTransferTokens
+            '0x791ac947': 'SELL', # swapExactTokensForETHSupportingFeeOnTransferTokens
+            
+            # Uniswap V3
+            '0x414bf389': 'BUY',   # exactInputSingle
+            '0xc04b8d59': 'BUY',   # exactInput
+            '0xdb3e2198': 'SELL',  # exactOutputSingle
+            '0xf28c0498': 'SELL',  # exactOutput
+            '0x5ae401dc': 'MIXED', # multicall (contains swaps)
+            '0x472b43f3': 'BUY',   # exactInputSingle (alternate)
+            '0x09b81346': 'SELL',  # exactOutputSingle (alternate)
+            
+            # Aerodrome specific
+            '0x9b2c0a37': 'BUY',   # swapExactTokensForTokens
+            '0xe8e33700': 'BUY',   # addLiquidity (often paired with buys)
+            '0xbaa2ab': 'SELL',   # removeLiquidity
+        }
+        
+        # Track method IDs for diagnostics
+        self.method_id_counter = Counter()
+        self.diagnostic_logged = False
+        
+        logger.info("✅ OrderFlowImbalance scanner initialized (Diagnostic Mode)")
     
     async def scan_mempool_imbalance(self) -> List[Dict]:
-        logger.info("🔍 Scanner: Starting scan...")
         try:
-            logger.info("🔍 Scanner: Getting current block...")
             current_block = self.web3.eth.block_number 
-            logger.info(f"🔍 Scanner: Current block = {current_block}")
-            
             token_flows = defaultdict(lambda: {'buys': 0, 'sells': 0, 'total_eth': 0, 'unique_buyers': set()})
             
-            logger.info("🔍 Scanner: Scanning last 3 blocks...")
+            # Scan last 3 blocks
             for i in range(3):
                 block_num = current_block - i
                 try:
-                    logger.info(f"🔍 Scanner: Fetching block {block_num}...")
                     block = self.web3.eth.get_block(block_num, full_transactions=True) 
-                    logger.info(f"🔍 Scanner: Block {block_num} has {len(block.transactions)} transactions")
                     
                     for tx in block.transactions:
+                        # DIAGNOSTIC: Log first 20 method IDs we see
+                        if not self.diagnostic_logged and len(self.method_id_counter) < 20:
+                            if hasattr(tx, 'input') and tx.input and len(tx.input) >= 4:
+                                if isinstance(tx.input, bytes):
+                                    method_id = '0x' + tx.input[:4].hex()
+                                else:
+                                    method_id = str(tx.input)[:10]
+                                self.method_id_counter[method_id] += 1
+                        
                         decoded = self._decode_swap(tx)
                         if decoded:
                             direction = 'buys' if decoded['type'] == 'BUY' else 'sells'
@@ -87,11 +125,17 @@ class OrderFlowImbalance:
                             if direction == 'buys':
                                 token_flows[decoded['token']]['unique_buyers'].add(decoded['from_addr'])
                 except Exception as e:
-                    logger.error(f"🔍 Scanner: Block fetch error {block_num}: {e}")
+                    logger.error(f"Block fetch error {block_num}: {e}")
                     continue
             
+            # DIAGNOSTIC: Log top method IDs once
+            if not self.diagnostic_logged and len(self.method_id_counter) > 0:
+                logger.info("🔍 DIAGNOSTIC: Top 10 method IDs found in transactions:")
+                for method_id, count in self.method_id_counter.most_common(10):
+                    logger.info(f"   {method_id}: {count} times")
+                self.diagnostic_logged = True
+            
             total_swaps = sum(f['buys'] + f['sells'] for f in token_flows.values())
-            logger.info(f"🔍 Scanner: Found {total_swaps} swaps across {len(token_flows)} tokens")
             
             if total_swaps > 0:
                 sorted_tokens = sorted(token_flows.items(), key=lambda x: x[1]['total_eth'], reverse=True)[:3]
@@ -124,10 +168,9 @@ class OrderFlowImbalance:
                         'timestamp': time.time()
                     })
             
-            logger.info(f"🔍 Scanner: Generated {len(signals)} signals")
             return sorted(signals, key=lambda x: x['total_flow_eth'], reverse=True)[:3]
         except Exception as e:
-            logger.error(f"🔍 Scanner: CRITICAL ERROR: {e}", exc_info=True)
+            logger.error(f"Scanner error: {e}", exc_info=True)
             return []
     
     def _decode_swap(self, tx) -> Dict:
@@ -140,21 +183,38 @@ class OrderFlowImbalance:
             else:
                 method_id = str(tx.input)[:10]
             
+            # Check if this is a known swap method
             if method_id not in self.swap_signatures:
                 return None
             
-            is_buy = self.swap_signatures[method_id] == 'BUY'
-            eth_value = tx.value if hasattr(tx, 'value') else 0
-            token_address = tx.to if hasattr(tx, 'to') and tx.to else None
+            swap_type = self.swap_signatures[method_id]
             
-            if not token_address or eth_value == 0:
+            # For multicall, we'd need to decode further - skip for now
+            if swap_type == 'MIXED':
+                return None
+            
+            is_buy = swap_type == 'BUY'
+            eth_value = tx.value if hasattr(tx, 'value') else 0
+            
+            # Get the router address (tx.to)
+            router_address = tx.to.lower() if hasattr(tx, 'to') and tx.to else None
+            
+            # For buys, the token is in the path (we'd need to decode input data)
+            # For now, use the router address as a proxy
+            if not router_address:
+                return None
+            
+            # Skip if no ETH value for buys
+            if is_buy and eth_value == 0:
                 return None
             
             return {
                 'type': 'BUY' if is_buy else 'SELL',
-                'token': token_address.lower(),
+                'token': router_address,  # Using router as proxy for now
                 'eth_value': eth_value,
-                'from_addr': tx.get('from', '').lower()
+                'from_addr': tx.get('from', '').lower(),
+                'router': router_address,
+                'dex': self.dex_routers.get(router_address, 'Unknown')
             }
         except Exception as e:
             logger.debug(f"Decode error: {e}")
@@ -212,7 +272,6 @@ except Exception as e:
     sys.exit(1)
 
 # Initialize scanners
-logger.info(f"Initializing scanners: OrderFlow={settings.enable_order_flow}, CircuitBreaker={settings.enable_circuit_breaker}")
 order_flow_scanner = OrderFlowImbalance(w3) if settings.enable_order_flow else None
 circuit_breaker = CircuitBreakerV2() if settings.enable_circuit_breaker else None
 
@@ -220,7 +279,7 @@ logger.info("✅ Async Executor initialized (Monolithic Mode)")
 logger.info(f"🔧 Features: OrderFlow={settings.enable_order_flow}, CircuitBreaker={settings.enable_circuit_breaker}")
 
 # =============================================================================
-# 6. MAIN POLLING LOOP (Ultra-Debug)
+# 6. MAIN POLLING LOOP
 # =============================================================================
 async def poll_blockchain():
     print(f"[AsyncExecutor] Starting Async Block Listener...", flush=True)
@@ -236,16 +295,9 @@ async def poll_blockchain():
                     print(f"[AsyncExecutor] Live block {current_block}", flush=True)
                 last_block = current_block
                 
-                # ULTRA-DEBUG: Log the condition check
-                should_scan = settings.enable_order_flow and order_flow_scanner and current_block % 5 == 0
-                if current_block % 5 == 0:
-                    logger.info(f"🔍 Block {current_block}: should_scan={should_scan} (enable={settings.enable_order_flow}, scanner={order_flow_scanner is not None}, mod5={current_block % 5 == 0})")
-                
-                if should_scan:
-                    logger.info(f"🔍 Triggering scanner at block {current_block}...")
+                if settings.enable_order_flow and order_flow_scanner and current_block % 5 == 0:
                     try:
                         flow_signals = await order_flow_scanner.scan_mempool_imbalance()
-                        logger.info(f"🔍 Scanner returned {len(flow_signals)} signals")
                         
                         for signal in flow_signals:
                             signal_count += 1
@@ -266,7 +318,7 @@ async def poll_blockchain():
                             )
                             await log_signal_to_db(signal)
                     except Exception as e:
-                        logger.error(f"🔍 Scanner execution error: {e}", exc_info=True)
+                        logger.error(f"Scanner execution error: {e}", exc_info=True)
                 
                 await asyncio.sleep(2)
             else:
