@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """
-AlphaPulse Async Executor - Minimal Self-Contained Version
-Guaranteed to run on Hugging Face Spaces without package import issues.
+AlphaPulse Async Executor - Upgraded Version with Order Flow & Circuit Breaker
 """
 import asyncio
 import logging
@@ -10,144 +9,119 @@ import sys
 import time
 from datetime import datetime
 from pathlib import Path
+from web3 import Web3
 
-# =============================================================================
-# 🚨 INLINE CONFIG (No external config.py dependency)
-# =============================================================================
-class MinimalConfig:
-    def __init__(self):
-        self.db_path = Path(os.environ.get("DB_PATH", "/data/alphapulse.db"))
-        self.active_chain = os.environ.get("ACTIVE_CHAIN", "base")
-        self.base_rpc = os.environ.get("BASE_RPC", "https://mainnet.base.org")
-        self.base_private_key = os.environ.get("BASE_PRIVATE_KEY", "")
-        self.groq_api_key = os.environ.get("GROQ_API_KEY", "")
-        self.telegram_bot_token = os.environ.get("TELEGRAM_BOT_TOKEN", "")
-        self.telegram_chat_id = os.environ.get("TELEGRAM_CHAT_ID", "")
-        self.volume_mount_path = os.environ.get("RAILWAY_VOLUME_MOUNT_PATH", "/data")
-        
-        # Ensure data directory exists
-        self.db_path.parent.mkdir(parents=True, exist_ok=True)
+# Import new modules
+from fetchers.order_flow_scanner import OrderFlowImbalance
+from fetchers.circuit_breaker_v2 import CircuitBreakerV2
+from config import settings
 
-settings = MinimalConfig()
-
-# =============================================================================
-# 🚨 INLINE WEB3 SETUP (No external chain_config.py dependency)
-# =============================================================================
-try:
-    from web3 import Web3
-    CFG_W3 = Web3(Web3.HTTPProvider(settings.base_rpc))
-except ImportError:
-    print("⚠️ web3 not available - running in monitor-only mode")
-    CFG_W3 = None
-
-# =============================================================================
-# 🚨 INLINE DATABASE (No external database.py dependency)
-# =============================================================================
-import sqlite3
-class MinimalStateDB:
-    def __init__(self, db_path: Path):
-        self.db_path = db_path
-        self.db_path.parent.mkdir(parents=True, exist_ok=True)
-        self._conn = None
-        self._init_schema()
-    
-    def _get_conn(self):
-        if self._conn is None:
-            self._conn = sqlite3.connect(str(self.db_path), timeout=30)
-            self._conn.execute("PRAGMA journal_mode=WAL")
-        return self._conn
-    
-    def _init_schema(self):
-        conn = self._get_conn()
-        cursor = conn.cursor()
-        cursor.execute("""CREATE TABLE IF NOT EXISTS state_cache (
-            config_name TEXT PRIMARY KEY, last_check_ts INTEGER, seen_ids TEXT)""")
-        cursor.execute("""CREATE TABLE IF NOT EXISTS alpha_signals (
-            id INTEGER PRIMARY KEY AUTOINCREMENT, signal_type TEXT, tx_hash TEXT UNIQUE,
-            entry_price REAL, exit_price REAL, pnl_pct REAL, status TEXT DEFAULT 'OPEN')""")
-        conn.commit()
-        print(f"✅ StateDB initialized at {self.db_path}")
-    
-    async def get_last_state(self, config_name: str):
-        try:
-            cursor = self._get_conn().cursor()
-            cursor.execute("SELECT last_check_ts, seen_ids FROM state_cache WHERE config_name=?", (config_name,))
-            row = cursor.fetchone()
-            if row:
-                import json
-                return row[0], json.loads(row[1]) if row[1] else []
-            return 0, []
-        except: return 0, []
-    
-    async def update_state(self, config_name: str, check_ts: int, seen_ids: list):
-        try:
-            import json
-            cursor = self._get_conn().cursor()
-            cursor.execute("INSERT OR REPLACE INTO state_cache VALUES (?,?,?)", 
-                         (config_name, check_ts, json.dumps(seen_ids[-100:])))
-            self._get_conn().commit()
-        except: pass
-
-state_db = MinimalStateDB(settings.db_path)
-
-# =============================================================================
-# 🚨 MAIN EXECUTOR LOOP (No external fetchers dependency)
-# =============================================================================
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
+    handlers=[logging.StreamHandler(sys.stdout)]
+)
 logger = logging.getLogger("AsyncExecutor")
-logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(name)s | %(message)s")
 
-SMART_WALLETS = [
-    "0x6d4223342506d27548042B1B86d0389675F972b2",  # Jesse Pollak
-    "0x3154Cf16ccdb4C6d922629664174b904d80F2C35",  # Base Bridge
-]
-SEEN_TXS = set()
-MIN_ETH = 0.5
+# Initialize Web3
+try:
+    if settings.quicknode_ws_enabled and settings.base_ws:
+        logger.info(f"Connecting to WebSocket: {settings.base_ws[:50]}...")
+        w3 = Web3(Web3.WebsocketProvider(settings.base_ws))
+    else:
+        logger.info(f"Connecting to HTTP RPC: {settings.base_rpc[:50]}...")
+        w3 = Web3(Web3.HTTPProvider(settings.base_rpc))
+    
+    if w3.is_connected():
+        logger.info("✅ Web3 connection established")
+    else:
+        logger.error("❌ Web3 connection failed")
+        sys.exit(1)
+except Exception as e:
+    logger.error(f"Web3 initialization error: {e}")
+    sys.exit(1)
+
+# Initialize scanners
+order_flow_scanner = OrderFlowImbalance(w3) if settings.enable_order_flow else None
+circuit_breaker = CircuitBreakerV2() if settings.enable_circuit_breaker else None
+
+logger.info("✅ Async Executor initialized with upgrades")
 
 async def poll_blockchain():
-    """Minimal blockchain polling loop - no external dependencies."""
+    """Main blockchain polling loop with order flow scanning"""
     print(f"[AsyncExecutor] Starting Async Block Listener (Base 2s block time)...")
     last_block = None
+    signal_count = 0
     
     while True:
         try:
-            if CFG_W3:
-                current_block = CFG_W3.eth.block_number
-                if current_block != last_block:
-                    print(f"[AsyncExecutor] Starting from live block {current_block}")
-                    last_block = current_block
+            current_block = w3.eth.block_number
+            
+            if current_block != last_block:
+                print(f"[AsyncExecutor] Starting from live block {current_block}")
+                last_block = current_block
+                
+                # Scan order flow every 10 blocks
+                if settings.enable_order_flow and order_flow_scanner and current_block % 10 == 0:
+                    flow_signals = await order_flow_scanner.scan_mempool_imbalance()
                     
-                    # Minimal wallet scan (inline, no fetchers import)
-                    for wallet in SMART_WALLETS:
-                        try:
-                            # Check last 5 blocks for activity
-                            for i in range(5):
-                                block_num = current_block - i
-                                if block_num < 0: continue
-                                block = CFG_W3.eth.get_block(block_num, full_transactions=True)
-                                for tx in block.transactions:
-                                    if isinstance(tx, dict):
-                                        tx_hash = tx.get('hash', b'').hex() if tx.get('hash') else None
-                                        from_addr = tx.get('from', '').lower()
-                                        to_addr = tx.get('to', '').lower() if tx.get('to') else ''
-                                        value_eth = float(CFG_W3.from_wei(tx.get('value', 0), 'ether'))
-                                        
-                                        if tx_hash and tx_hash not in SEEN_TXS:
-                                            if from_addr == wallet.lower() or to_addr == wallet.lower():
-                                                if value_eth >= MIN_ETH:
-                                                    SEEN_TXS.add(tx_hash)
-                                                    print(f"🚨 SMART MONEY: {wallet[:10]}... | {value_eth:.3f} ETH | Block {block_num}")
-                                                    # Here you would route to AI/execution in full version
-                        except Exception as e:
-                            pass  # Skip errors, continue polling
+                    for signal in flow_signals:
+                        signal_count += 1
+                        
+                        # Check circuit breaker before logging signal
+                        if circuit_breaker:
+                            safety_check = await circuit_breaker.check_anomaly(signal['token'], w3)
+                            if safety_check['action'] == 'BLOCK_TRADE':
+                                logger.warning(f"🚫 Circuit breaker blocked signal: {safety_check['reason']}")
+                                continue
+                        
+                        logger.info(
+                            f"📊 ORDER FLOW SIGNAL #{signal_count} | "
+                            f"Token: {signal['token'][:10]}... | "
+                            f"Ratio: {signal['buy_sell_ratio']:.1f}:1 | "
+                            f"Flow: {signal['total_flow_eth']:.2f} ETH | "
+                            f"Buyers: {signal['unique_buyers']} | "
+                            f"Confidence: {signal['confidence']:.0f}%"
+                        )
+                        
+                        # Here you would route to execution engine
+                        # For now, just log the signal
+                        await log_signal_to_db(signal)
+                
                 await asyncio.sleep(2)  # Base block time
             else:
-                # Fallback: just log heartbeat if web3 unavailable
-                print(f"[AsyncExecutor] Heartbeat - monitoring mode (web3 unavailable)")
-                await asyncio.sleep(10)
+                await asyncio.sleep(1)
                 
         except Exception as e:
-            print(f"[AsyncExecutor] Polling error: {e}")
+            logger.error(f"[AsyncExecutor] Polling error: {e}")
             await asyncio.sleep(5)
+
+async def log_signal_to_db(signal: dict):
+    """Log signal to database for tracking"""
+    try:
+        import sqlite3
+        conn = sqlite3.connect(settings.db_path)
+        cursor = conn.cursor()
+        
+        cursor.execute("""
+            INSERT OR IGNORE INTO alpha_signals 
+            (signal_type, tx_hash, ai_score, status, created_at)
+            VALUES (?, ?, ?, ?, ?)
+        """, (
+            signal.get('signal_type', 'order_flow'),
+            f"signal_{int(time.time())}_{signal['token'][:8]}",
+            signal.get('confidence', 50),
+            'PENDING',
+            datetime.utcnow().isoformat()
+        ))
+        
+        conn.commit()
+        conn.close()
+        logger.info(f"✅ Signal logged to database")
+        
+    except Exception as e:
+        logger.error(f"Failed to log signal: {e}")
 
 # =============================================================================
 # 🚨 ENTRY POINT
@@ -155,6 +129,7 @@ async def poll_blockchain():
 async def main():
     print("🚀 AlphaPulse Dual-Process Engine Initializing...")
     print(f"📡 Using port: {os.environ.get('PORT', 7860)}")
+    print(f"🔧 Features: OrderFlow={settings.enable_order_flow}, CircuitBreaker={settings.enable_circuit_breaker}")
     print("✅ Async Executor started in background")
     
     # Start blockchain polling
