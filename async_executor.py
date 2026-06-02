@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-AlphaPulse Async Executor - Monolithic Version (HTTP Forced & Logs Flushed)
+AlphaPulse Async Executor - Monolithic Version (Debug Logging Added)
 """
 import sys
 import os
@@ -29,7 +29,7 @@ except Exception as e:
             self.db_path = os.environ.get("DB_PATH", "/data/alphapulse.db")
             self.base_rpc = os.environ.get("BASE_RPC", "https://mainnet.base.org")
             self.base_ws = os.environ.get("BASE_WS", "")
-            self.quicknode_ws_enabled = False # Force HTTP for stability
+            self.quicknode_ws_enabled = False
             self.enable_order_flow = os.environ.get("ENABLE_ORDER_FLOW", "true").lower() == "true"
             self.enable_circuit_breaker = os.environ.get("ENABLE_CIRCUIT_BREAKER", "true").lower() == "true"
             Path("/data").mkdir(parents=True, exist_ok=True)
@@ -46,7 +46,7 @@ logging.basicConfig(
 logger = logging.getLogger("AsyncExecutor")
 
 # =============================================================================
-# 3. INLINE: ORDER FLOW SCANNER
+# 3. INLINE: ORDER FLOW SCANNER (Debug Logging Added)
 # =============================================================================
 class OrderFlowImbalance:
     def __init__(self, web3: Web3):
@@ -57,7 +57,7 @@ class OrderFlowImbalance:
             '0x7ff36ab5': 'BUY',  # swapExactETHForTokens
             '0x38ed1739': 'SELL', # swapExactTokensForETH
             '0xfb3bdb41': 'BUY',   # swapETHForExactTokens
-            '0x18cbafe5': 'SELL'  # swapExactTokensForTokens (often sells)
+            '0x18cbafe5': 'SELL'  # swapExactTokensForTokens
         }
     
     async def scan_mempool_imbalance(self) -> List[Dict]:
@@ -65,7 +65,7 @@ class OrderFlowImbalance:
             current_block = self.web3.eth.block_number 
             token_flows = defaultdict(lambda: {'buys': 0, 'sells': 0, 'total_eth': 0, 'unique_buyers': set()})
             
-            # Scan last 3 blocks to be fast and avoid rate limits
+            # Scan last 3 blocks
             for i in range(3):
                 block_num = current_block - i
                 try:
@@ -81,6 +81,22 @@ class OrderFlowImbalance:
                 except Exception as e:
                     logger.debug(f"Block fetch error {block_num}: {e}")
                     continue
+            
+            # DEBUG: Log what we found
+            total_swaps = sum(f['buys'] + f['sells'] for f in token_flows.values())
+            if total_swaps > 0:
+                logger.info(f"🔍 Scanned 3 blocks | Found {total_swaps} swaps across {len(token_flows)} tokens")
+                
+                # Show top 3 tokens by flow (even if they don't meet threshold)
+                sorted_tokens = sorted(token_flows.items(), key=lambda x: x[1]['total_eth'], reverse=True)[:3]
+                for token, flows in sorted_tokens:
+                    ratio = flows['buys'] / max(flows['sells'], 1) if flows['sells'] > 0 else flows['buys'] * 2
+                    logger.info(
+                        f"   → {token[:10]}... | "
+                        f"Buys: {flows['buys']} | Sells: {flows['sells']} | "
+                        f"Ratio: {ratio:.1f}:1 | "
+                        f"Flow: {flows['total_eth'] / 1e18:.2f} ETH"
+                    )
             
             signals = []
             for token, flows in token_flows.items():
@@ -172,11 +188,9 @@ class CircuitBreakerV2:
             return {"anomaly": False, "action": "ALLOW", "reason": "error_fail_open"}
 
 # =============================================================================
-# 5. WEB3 INITIALIZATION (FORCED HTTP FOR STABILITY)
+# 5. WEB3 INITIALIZATION
 # =============================================================================
 try:
-    # We FORCE HTTP provider. WebSockets in synchronous web3.py v6 often hang on RPC calls.
-    # HTTP is 100% reliable and perfectly fast enough for scanning every 10 seconds.
     rpc_url = settings.base_rpc
     logger.info(f"Connecting to HTTP RPC: {rpc_url[:50]}...")
     w3 = Web3(Web3.HTTPProvider(rpc_url, request_kwargs={'timeout': 10}))
@@ -214,7 +228,7 @@ async def poll_blockchain():
                     print(f"[AsyncExecutor] Live block {current_block}", flush=True)
                 last_block = current_block
                 
-                # Scan order flow every 5 blocks (approx every 10 seconds)
+                # Scan order flow every 5 blocks
                 if settings.enable_order_flow and order_flow_scanner and current_block % 5 == 0:
                     flow_signals = await order_flow_scanner.scan_mempool_imbalance()
                     
