@@ -40,13 +40,29 @@ class AppConfig:
         self.min_pool_tvl_eth = float(os.environ.get("MIN_POOL_TVL_ETH", "25.0"))
         self.max_daily_trades = int(os.environ.get("MAX_DAILY_TRADES", "10"))
         
-        # 🚨 NEW: Feature Flags for Upgrades
+        # 🚨 Feature Flags for Upgrades
         self.enable_order_flow = os.environ.get("ENABLE_ORDER_FLOW", "true").lower() == "true"
         self.enable_circuit_breaker = os.environ.get("ENABLE_CIRCUIT_BREAKER", "true").lower() == "true"
         self.enable_escrow = os.environ.get("ENABLE_ESCROW", "true").lower() == "true"
         self.enable_twap = os.environ.get("ENABLE_TWAP", "false").lower() == "true"
         self.enable_execution = os.environ.get("ENABLE_EXECUTION", "true").lower() == "true"
-        self.quicknode_ws_enabled = os.environ.get("QUICKNODE_WS_ENABLED", "false").lower() == "true"
+        self.quicknode_ws_enabled = os.environ.get("QUICKNODE_WS_ENABLED", "true").lower() == "true"
+        
+        # --- 🆕 NEW: Professional DEX & Contract Addresses ---
+        self.weth_address = "0x4200000000000000000000000000000000000006"
+        self.routers = {
+            "Aerodrome": "0xcF77a3Ba9A5CA399B7c97c74d54e5b1Beb874E43",
+            "UniswapV3": "0x2626664c2603336E57B271c5C0b26F421741e481",
+        }
+        self.factories = {
+            "Aerodrome": "0x420DD381b31aEf6683db6B902084cB0FFECe40Da",
+        }
+        self.bridge = "0x3154Cf16ccdb4C6d922629664174b904d80F2C35"
+        
+        # --- 🆕 NEW: Risk & Execution Parameters ---
+        self.max_position_eth = float(os.environ.get("MAX_POSITION_ETH", "0.01"))
+        self.slippage_bps = int(os.environ.get("SLIPPAGE_BPS", "200")) # 2.0%
+        self.gas_limit = int(os.environ.get("GAS_LIMIT", "300000"))
         
         # Notification settings
         self.platform = os.environ.get("PLATFORM", "telegram")
@@ -78,20 +94,9 @@ class AppConfig:
     def load_example_configs(self):
         """Returns example monitoring configurations."""
         return {
-            "whale_watch": {
-                "type": "whale",
-                "threshold_eth": 10.0,
-                "check_interval_minutes": self.check_interval_minutes
-            },
-            "governance_watch": {
-                "type": "governance",
-                "space": "aave.eth",
-                "check_interval_minutes": self.check_interval_minutes
-            },
-            "weekly_digest": {
-                "type": "digest",
-                "check_interval_minutes": 10080  # 7 days
-            }
+            "whale_watch": {"type": "whale", "threshold_eth": 10.0, "check_interval_minutes": self.check_interval_minutes},
+            "governance_watch": {"type": "governance", "space": "aave.eth", "check_interval_minutes": self.check_interval_minutes},
+            "weekly_digest": {"type": "digest", "check_interval_minutes": 10080}
         }
     
     def load_config(self, name: str):
